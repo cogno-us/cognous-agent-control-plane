@@ -42,6 +42,10 @@
     "deterministic_fingerprint": {
       "type": "string",
       "description": "Stable SHA-256 hex digest of the canonical decision inputs. Identical inputs always produce the same fingerprint."
+    },
+    "trace_id": {
+      "type": ["string", "null"],
+      "description": "Optional reference to a policy evaluation trace for this decision."
     }
   },
   "additionalProperties": false

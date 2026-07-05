@@ -38,7 +38,9 @@ from agent_control_plane.models import (
     ActionProposal,
     AuthorityRecord,
     Frame,
+    PolicyEvaluationTrace,
     PolicyDecision,
+    PolicyRuleEvaluation,
 )
 
 if TYPE_CHECKING:
@@ -84,7 +86,11 @@ class PolicyGate:
             evaluation_time,
         )
         fingerprint = self._fingerprint(action, frame, active_scopes)
-        result, policy_name, reason = self._apply_rules(action, frame, active_scopes)
+        result, policy_name, reason, _trace_rules = self._apply_rules(
+            action,
+            frame,
+            active_scopes,
+        )
 
         return PolicyDecision(
             decision_id=str(uuid.uuid4()),
@@ -97,6 +103,53 @@ class PolicyGate:
             deterministic_fingerprint=fingerprint,
         )
 
+    def evaluate_with_trace(
+        self,
+        action: ActionProposal,
+        frame: Frame,
+        authority_records: list[AuthorityRecord],
+        *,
+        now: str | datetime | None = None,
+    ) -> tuple[PolicyDecision, PolicyEvaluationTrace]:
+        """Evaluate an action proposal and return both decision and trace."""
+
+        evaluation_time = self._parse_time(now) if now is not None else self._now_utc()
+        active_scopes = self._active_authority_scopes(
+            action,
+            frame,
+            authority_records,
+            evaluation_time,
+        )
+        fingerprint = self._fingerprint(action, frame, active_scopes)
+        result, policy_name, reason, trace_rules = self._apply_rules(
+            action,
+            frame,
+            active_scopes,
+        )
+        trace_id = str(uuid.uuid4())
+
+        decision = PolicyDecision(
+            decision_id=str(uuid.uuid4()),
+            action_id=action.action_id,
+            run_id=action.run_id,
+            result=result,
+            policy_name=policy_name,
+            reason=reason,
+            decided_at=evaluation_time.isoformat(),
+            deterministic_fingerprint=fingerprint,
+            trace_id=trace_id,
+        )
+        trace = PolicyEvaluationTrace(
+            trace_id=trace_id,
+            run_id=action.run_id,
+            action_id=action.action_id,
+            evaluated_at=evaluation_time.isoformat(),
+            rules_evaluated=trace_rules,
+            final_result=result,
+            deterministic_fingerprint=fingerprint,
+        )
+        return decision, trace
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -106,79 +159,85 @@ class PolicyGate:
         action: ActionProposal,
         frame: Frame,
         active_scopes: set[str],
-    ) -> tuple[str, str, str]:
-        """Return (result, policy_name, reason) by applying rules in order."""
+    ) -> tuple[str, str, str, list[PolicyRuleEvaluation]]:
+        """Return decision details plus an ordered policy evaluation trace."""
 
-        # Rule 1 – blocked tool
-        if action.tool_name in frame.blocked_tools:
-            return (
-                "block",
+        trace_rules: list[PolicyRuleEvaluation] = []
+        for rule_name, matched, result, reason in [
+            (
                 "blocked_tool_policy",
+                action.tool_name in frame.blocked_tools,
+                "block",
                 f"Tool '{action.tool_name}' is explicitly blocked in this frame.",
-            )
-
-        # Rule 2 – unknown tool (not in allow-list)
-        if action.tool_name not in frame.allowed_tools:
-            return (
-                "escalate",
+            ),
+            (
                 "unknown_tool_policy",
+                action.tool_name not in frame.allowed_tools,
+                "escalate",
                 (
                     f"Tool '{action.tool_name}' is not in the allowed-tools list "
                     "and requires manual review."
                 ),
-            )
-
-        # Rule 3 – external_send requires explicit authority
-        if action.action_type == "external_send":
-            if "external_send" not in active_scopes:
-                return (
-                    "block",
-                    "external_send_authority_policy",
-                    (
-                        "Action type 'external_send' requires an authority record "
-                        "with scope 'external_send', which was not found."
-                    ),
-                )
-            return (
-                "allow",
-                "external_send_authority_policy",
-                "Authority for 'external_send' is present; action allowed.",
-            )
-
-        # Rule 4 – read with allowed tool
-        if action.action_type == "read":
-            return (
-                "allow",
-                "read_allowed_tool_policy",
-                f"Tool '{action.tool_name}' is allowed and action type is 'read'.",
-            )
-
-        # Rule 5 – write with write authority
-        if action.action_type == "write":
-            if "write" in active_scopes:
-                return (
-                    "allow",
-                    "write_authority_policy",
-                    "Authority for 'write' is present; action allowed.",
-                )
-            return (
-                "escalate",
-                "write_authority_policy",
-                (
-                    "Action type 'write' requires an authority record with scope "
-                    "'write', which was not found; escalating for review."
-                ),
-            )
-
-        # Rule 6 – fallback escalate
-        return (
-            "escalate",
-            "default_escalation_policy",
-            (
-                f"Action type '{action.action_type}' does not match any explicit "
-                "allow or block rule; escalating for review."
             ),
-        )
+            (
+                "external_send_authority_policy",
+                action.action_type == "external_send",
+                "allow" if "external_send" in active_scopes else "block",
+                (
+                    "Authority for 'external_send' is present; action allowed."
+                    if "external_send" in active_scopes
+                    else "Action type 'external_send' requires an authority record "
+                    "with scope 'external_send', which was not found."
+                ),
+            ),
+            (
+                "read_allowed_tool_policy",
+                action.action_type == "read",
+                "allow",
+                f"Tool '{action.tool_name}' is allowed and action type is 'read'.",
+            ),
+            (
+                "write_authority_policy",
+                action.action_type == "write",
+                "allow" if "write" in active_scopes else "escalate",
+                (
+                    "Authority for 'write' is present; action allowed."
+                    if "write" in active_scopes
+                    else "Action type 'write' requires an authority record with "
+                    "scope 'write', which was not found; escalating for review."
+                ),
+            ),
+            (
+                "default_escalation_policy",
+                True,
+                "escalate",
+                (
+                    f"Action type '{action.action_type}' does not match any explicit "
+                    "allow or block rule; escalating for review."
+                ),
+            ),
+        ]:
+            if matched:
+                trace_rules.append(
+                    PolicyRuleEvaluation(
+                        rule_name=rule_name,
+                        matched=True,
+                        result=result,
+                        reason=reason,
+                    )
+                )
+                return result, rule_name, reason, trace_rules
+
+            trace_rules.append(
+                PolicyRuleEvaluation(
+                    rule_name=rule_name,
+                    matched=False,
+                    result="none",
+                    reason=f"Rule '{rule_name}' did not match this action.",
+                )
+            )
+
+        raise RuntimeError("Policy rule evaluation did not produce a decision.")
 
     def _fingerprint(
         self,

@@ -33,6 +33,7 @@ def generate_replay_bundle(run_record: RunRecord) -> ReplayBundle:
         frame=run_record.frame,
         actions=list(run_record.actions),
         decisions=list(run_record.decisions),
+        policy_traces=list(run_record.policy_traces),
         authority_records=list(run_record.authority_records),
         reliance_records=list(run_record.reliance_records),
         blocked_actions=list(run_record.blocked_actions),
