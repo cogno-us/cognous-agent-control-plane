@@ -38,7 +38,7 @@ def create_frame(
         task=task,
         actor=actor,
         environment=environment,
-        allowed_tools=list(allowed_tools),
-        blocked_tools=list(blocked_tools),
+        allowed_tools=tuple(allowed_tools),
+        blocked_tools=tuple(blocked_tools),
         policy_version=policy_version,
     )

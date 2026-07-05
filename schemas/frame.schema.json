@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/frame.schema.json",
+  "title": "Frame",
+  "description": "Execution context for a run, including actor, environment, allowed tools, blocked tools, and policy version.",
+  "type": "object",
+  "required": [
+    "frame_id",
+    "task",
+    "actor",
+    "environment",
+    "allowed_tools",
+    "blocked_tools",
+    "policy_version",
+    "created_at"
+  ],
+  "properties": {
+    "frame_id": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "allowed_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocked_tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy_version": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

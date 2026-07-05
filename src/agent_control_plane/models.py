@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def _now_iso() -> str:
@@ -28,16 +28,18 @@ class Frame(BaseModel):
     version, and the explicit allow/block lists for tools.
     """
 
+    model_config = ConfigDict(frozen=True)
+
     frame_id: str = Field(description="Unique identifier for this frame.")
     task: str = Field(description="The task description associated with this frame.")
     actor: str = Field(description="Identifier of the actor (agent, user, service).")
     environment: str = Field(description="Deployment environment, e.g. 'production'.")
-    allowed_tools: list[str] = Field(
-        default_factory=list,
+    allowed_tools: tuple[str, ...] = Field(
+        default_factory=tuple,
         description="Tools explicitly permitted in this frame.",
     )
-    blocked_tools: list[str] = Field(
-        default_factory=list,
+    blocked_tools: tuple[str, ...] = Field(
+        default_factory=tuple,
         description="Tools explicitly blocked in this frame.",
     )
     policy_version: str = Field(
@@ -97,8 +99,9 @@ class PolicyDecision(BaseModel):
     """The outcome of a policy gate evaluation for one ActionProposal.
 
     The ``deterministic_fingerprint`` field is a stable SHA-256 hash
-    derived from the inputs so that the same action + frame + authority
-    always produces the same fingerprint, enabling audit verification.
+    derived from the inputs so that the same action + frame + active
+    authority always produces the same result and fingerprint.  The
+    ``decision_id`` and ``decided_at`` fields are generated per evaluation.
     """
 
     decision_id: str = Field(description="Unique identifier for this decision.")
@@ -118,7 +121,7 @@ class PolicyDecision(BaseModel):
     deterministic_fingerprint: str = Field(
         description=(
             "Stable SHA-256 hex digest of the canonical decision inputs.  "
-            "Identical inputs always produce the same fingerprint."
+            "Identical inputs always produce the same result and fingerprint."
         )
     )
 

@@ -59,7 +59,8 @@ lists for tools.  The Frame is immutable for the duration of the run.
 
 The gate produces a `deterministic_fingerprint` (SHA-256 hex) from the
 canonical inputs so that two evaluations with identical inputs always
-produce the same fingerprint.
+produce the same result and fingerprint.  The `decision_id` and
+`decided_at` fields are generated per evaluation.
 
 ### RunRecord
 
@@ -110,7 +111,8 @@ generate_replay_bundle() → ReplayBundle
 ## Design principles
 
 - **Determinism**: given the same inputs the gate always returns the same
-  result and fingerprint.
+  result and fingerprint, while `decision_id` and `decided_at` are generated
+  for each evaluation.
 - **Immutability**: records are append-only; existing records are never
   modified after creation.
 - **Portability**: all records serialise to plain JSON with no binary

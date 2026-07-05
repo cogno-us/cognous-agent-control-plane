@@ -49,8 +49,10 @@ Key fields:
 - **reason** – a human-readable explanation.
 - **deterministic_fingerprint** – a SHA-256 hex digest of the canonical
   inputs (tool name, action type, target, allowed/blocked tools, policy
-  version, authority scopes).  Identical inputs always produce the same
-  fingerprint, enabling verification that a decision was reached correctly.
+  version, active authority scopes).  Identical inputs always produce the
+  same result and fingerprint, enabling verification that a decision was
+  reached correctly.  The `decision_id` and `decided_at` fields are
+  generated per evaluation.
 
 ---
 
@@ -82,7 +84,8 @@ Scopes that the policy gate checks:
 - `"external_send"` – allows `external_send` actions on allowed tools.
 
 Multiple authority records can be active simultaneously.  The policy gate
-collects all scopes from all active records when evaluating a proposal.
+collects scopes only from active records that match the current run, match
+the Frame actor, and have not expired when the proposal is evaluated.
 
 ---
 

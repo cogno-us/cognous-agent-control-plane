@@ -49,11 +49,22 @@ class TestDeterminism:
         action = _make_action()
         authority = _make_authority(["read"])
 
-        decision_1 = gate.evaluate(action, frame, [authority])
-        decision_2 = gate.evaluate(action, frame, [authority])
+        decision_1 = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
+        decision_2 = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
 
         assert decision_1.result == decision_2.result
         assert decision_1.deterministic_fingerprint == decision_2.deterministic_fingerprint
+        assert decision_1.decision_id != decision_2.decision_id
 
     def test_fingerprint_changes_with_different_inputs(self) -> None:
         """Changing any input must change the fingerprint."""
@@ -62,23 +73,120 @@ class TestDeterminism:
         action_read = _make_action("crm_read", "read")
         action_write = _make_action("crm_read", "write")
 
-        fp_read = gate.evaluate(action_read, frame, []).deterministic_fingerprint
-        fp_write = gate.evaluate(action_write, frame, []).deterministic_fingerprint
+        fp_read = gate.evaluate(
+            action_read,
+            frame,
+            [],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
+        fp_write = gate.evaluate(
+            action_write,
+            frame,
+            [],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
         assert fp_read != fp_write
 
     def test_fingerprint_stable_across_authority_insertion_order(self) -> None:
-        """Fingerprint must not change when authority scopes are provided in
-        different order."""
+        """Fingerprint must not change when active authority record order changes."""
         gate = PolicyGate()
         frame = _make_frame()
         action = _make_action()
 
-        auth_a = _make_authority(["read", "write"])
-        auth_b = _make_authority(["write", "read"])
+        auth_a = AuthorityRecord(
+            authority_id="auth-a",
+            run_id="run-det",
+            actor="test-agent",
+            scope=["read"],
+            source="test",
+        )
+        auth_b = AuthorityRecord(
+            authority_id="auth-b",
+            run_id="run-det",
+            actor="test-agent",
+            scope=["write"],
+            source="test",
+        )
 
-        fp_a = gate.evaluate(action, frame, [auth_a]).deterministic_fingerprint
-        fp_b = gate.evaluate(action, frame, [auth_b]).deterministic_fingerprint
+        fp_a = gate.evaluate(
+            action,
+            frame,
+            [auth_a, auth_b],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
+        fp_b = gate.evaluate(
+            action,
+            frame,
+            [auth_b, auth_a],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
         assert fp_a == fp_b
+
+    def test_fingerprint_uses_active_authority_only(self) -> None:
+        gate = PolicyGate()
+        frame = _make_frame()
+        action = _make_action("notes_search", "write")
+        active = AuthorityRecord(
+            authority_id="auth-active",
+            run_id="run-det",
+            actor="test-agent",
+            scope=["write"],
+            source="test",
+            expires_at="2026-06-01T00:00:00+00:00",
+        )
+        expired = AuthorityRecord(
+            authority_id="auth-expired",
+            run_id="run-det",
+            actor="test-agent",
+            scope=["external_send"],
+            source="test",
+            expires_at="2025-01-01T00:00:00+00:00",
+        )
+
+        fp_with_expired = gate.evaluate(
+            action,
+            frame,
+            [active, expired],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
+        fp_active_only = gate.evaluate(
+            action,
+            frame,
+            [active],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
+
+        assert fp_with_expired == fp_active_only
+
+    def test_fingerprint_changes_when_authority_expires_across_now_timestamps(self) -> None:
+        gate = PolicyGate()
+        frame = _make_frame().model_copy(
+            update={"allowed_tools": ("crm_read", "notes_search", "email_send")}
+        )
+        action = _make_action("email_send", "external_send")
+        authority = AuthorityRecord(
+            authority_id="auth-expiring",
+            run_id="run-det",
+            actor="test-agent",
+            scope=["external_send"],
+            source="test",
+            expires_at="2026-01-02T00:00:00+00:00",
+        )
+
+        active_fp = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        ).deterministic_fingerprint
+        expired_fp = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-03T00:00:00+00:00",
+        ).deterministic_fingerprint
+
+        assert active_fp != expired_fp
 
 
 class TestJsonRoundTrip:
