@@ -17,6 +17,8 @@ src/agent_control_plane.egg-info/requires.txt
 src/agent_control_plane.egg-info/top_level.txt
 tests/test_blocked_action.py
 tests/test_determinism.py
+tests/test_frame_immutability.py
 tests/test_policy_gate.py
 tests/test_reliance_record.py
 tests/test_replay_bundle.py
+tests/test_run_recorder.py

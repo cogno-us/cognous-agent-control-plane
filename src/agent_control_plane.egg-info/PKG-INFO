@@ -57,7 +57,7 @@ It provides:
 
 - A **deterministic policy gate** that evaluates action proposals against a
   Frame (allowed tools, blocked tools, authority records) and returns a
-  stable, verifiable decision.
+  stable result plus a verifiable deterministic fingerprint.
 - A **RunRecorder** that accumulates all run events into a structured
   `RunRecord`.
 - A **ReplayBundle** generator that produces a self-contained, portable
@@ -106,6 +106,17 @@ auditable record-keeping layer.
   implementation for deterministic policy gating and replayable records.
 - **Not a security boundary by itself** – the policy gate enforces what you
   define; bad policy configuration is not detected.
+
+---
+
+## Limitations
+
+- No real tool execution is performed.
+- No cryptographic signing of run records yet.
+- No persistence backend yet.
+- No policy DSL yet.
+- No dashboard or replay viewer yet.
+- Correctness depends on the policy rules supplied by the implementer.
 
 ---
 
@@ -193,6 +204,9 @@ Replay Bundle
 
 See [docs/architecture.md](docs/architecture.md) for full details.
 
+Identical inputs produce the same result and `deterministic_fingerprint`.
+The `decision_id` and `decided_at` fields are generated per evaluation.
+
 ---
 
 ## Core concepts
@@ -201,7 +215,7 @@ See [docs/architecture.md](docs/architecture.md) for full details.
 |---------|---------|
 | **Frame** | Immutable execution context for a run |
 | **ActionProposal** | Proposed tool call, recorded before execution |
-| **PolicyDecision** | Gate outcome with stable fingerprint |
+| **PolicyDecision** | Gate outcome with stable result and fingerprint; IDs and timestamps are per evaluation |
 | **BlockedAction** | Auto-created record for every blocked decision |
 | **AuthorityRecord** | Scoped permission grant for the run |
 | **RelianceRecord** | External-source dependency record |
@@ -217,6 +231,7 @@ JSON Schema Draft 2020-12 files are in the `schemas/` directory:
 
 | File | Describes |
 |------|-----------|
+| `schemas/frame.schema.json` | `Frame` |
 | `schemas/run_record.schema.json` | `RunRecord` |
 | `schemas/action_proposal.schema.json` | `ActionProposal` |
 | `schemas/policy_decision.schema.json` | `PolicyDecision` |
@@ -236,10 +251,12 @@ pytest
 Test coverage:
 
 - `test_policy_gate.py` – allow, block, and escalate decisions; external-send authority
+- `test_frame_immutability.py` – frozen Frame behavior
 - `test_blocked_action.py` – blocked-action record creation
 - `test_replay_bundle.py` – bundle completeness and JSON round-trip
 - `test_reliance_record.py` – reliance record creation and linkage
 - `test_determinism.py` – fingerprint stability and JSON export round-trip
+- `test_run_recorder.py` – recorder action/run validation
 
 ---
 
