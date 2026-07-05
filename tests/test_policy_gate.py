@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_control_plane.models import ActionProposal, AuthorityRecord, Frame
 from agent_control_plane.policy_gate import PolicyGate
 
@@ -39,13 +37,21 @@ def _make_action(
     )
 
 
-def _make_authority(scope: list[str], run_id: str = "run-1") -> AuthorityRecord:
+def _make_authority(
+    scope: list[str],
+    *,
+    run_id: str = "run-1",
+    actor: str = "test-agent",
+    expires_at: str | None = None,
+    authority_id: str = "auth-1",
+) -> AuthorityRecord:
     return AuthorityRecord(
-        authority_id="auth-1",
+        authority_id=authority_id,
         run_id=run_id,
-        actor="test-agent",
+        actor=actor,
         scope=scope,
         source="test",
+        expires_at=expires_at,
     )
 
 
@@ -103,5 +109,58 @@ class TestExternalSendAuthority:
         frame = _make_frame(allowed_tools=["email_send"])
         action = _make_action("email_send", "external_send")
         authority = _make_authority(["external_send"])
-        decision = gate.evaluate(action, frame, [authority])
+        decision = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
         assert decision.result == "allow"
+
+    def test_external_send_expired_authority_blocks(self) -> None:
+        gate = PolicyGate()
+        frame = _make_frame(allowed_tools=["email_send"])
+        action = _make_action("email_send", "external_send")
+        authority = _make_authority(
+            ["external_send"],
+            expires_at="2025-01-01T00:00:00+00:00",
+        )
+
+        decision = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
+
+        assert decision.result == "block"
+
+    def test_authority_for_different_actor_ignored(self) -> None:
+        gate = PolicyGate()
+        frame = _make_frame(allowed_tools=["email_send"])
+        action = _make_action("email_send", "external_send")
+        authority = _make_authority(["external_send"], actor="other-agent")
+
+        decision = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
+
+        assert decision.result == "block"
+
+    def test_authority_for_different_run_ignored(self) -> None:
+        gate = PolicyGate()
+        frame = _make_frame(allowed_tools=["email_send"])
+        action = _make_action("email_send", "external_send")
+        authority = _make_authority(["external_send"], run_id="run-2")
+
+        decision = gate.evaluate(
+            action,
+            frame,
+            [authority],
+            now="2026-01-01T00:00:00+00:00",
+        )
+
+        assert decision.result == "block"

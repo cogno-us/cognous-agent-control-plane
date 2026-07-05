@@ -202,6 +202,10 @@ class RunRecorder:
             non-blocking decisions.
         """
         self._require_started()
+        if action.run_id != self._run_id:
+            raise ValueError("Action belongs to a different run.")
+        if not any(proposed.action_id == action.action_id for proposed in self._actions):
+            raise ValueError("Action was not proposed in this run.")
         decision = self._gate.evaluate(action, self._frame, self._authority_records)  # type: ignore[arg-type]
         self._decisions.append(decision)
 
