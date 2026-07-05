@@ -310,3 +310,32 @@ class ReplayBundle(BaseModel):
         default=None,
         description="Final output produced by the agent.",
     )
+
+
+# ---------------------------------------------------------------------------
+# SignedReplayBundle
+# ---------------------------------------------------------------------------
+
+
+class SignedReplayBundle(BaseModel):
+    """Replay bundle plus optional integrity metadata.
+
+    This model stores a replay bundle alongside an HMAC signature so callers
+    can verify whether an exported bundle has changed since it was signed.
+    """
+
+    signed_bundle_id: str = Field(
+        description="Unique identifier for this signed replay bundle."
+    )
+    replay_bundle: ReplayBundle = Field(
+        description="The replay bundle covered by the signature."
+    )
+    signature: str = Field(description="Hex-encoded signature for the replay bundle.")
+    signature_algorithm: str = Field(
+        default="HMAC-SHA256",
+        description="Signature algorithm used for the bundle export.",
+    )
+    signed_at: str = Field(
+        default_factory=_now_iso,
+        description="ISO-8601 timestamp when this bundle was signed.",
+    )

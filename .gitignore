@@ -18,6 +18,10 @@ env/
 .coverage
 htmlcov/
 
+# Example outputs
+examples/output/*
+!examples/output/.gitkeep
+
 # Editor
 .idea/
 .vscode/
