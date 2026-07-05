@@ -125,3 +125,30 @@ It contains:
 Bundles can be serialised to JSON via `replay.to_json()` and deserialised
 via `replay.from_json()`.  They are intended for offline audit, compliance
 review, or replay simulation.
+
+---
+
+## SignedReplayBundle
+
+A **SignedReplayBundle** wraps a `ReplayBundle` plus an HMAC-SHA256 signature
+and signing metadata.
+
+It supports optional integrity verification for exported bundles. It does not
+provide production key management or claim to be a complete security boundary.
+
+---
+
+## PolicyConfig
+
+A **PolicyConfig** is a lightweight JSON configuration model that can be used
+to create a `Frame` for examples or small integrations.
+
+It includes:
+
+- `policy_version`
+- `allowed_tools`
+- `blocked_tools`
+- `authority_required`
+- `default_action`
+
+This is intentionally a simple configuration format, not a full policy DSL.
