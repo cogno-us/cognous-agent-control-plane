@@ -25,15 +25,19 @@ traces.
 7. [Optional signed replay bundles](#optional-signed-replay-bundles)
 8. [Policy configuration example](#policy-configuration-example)
 9. [Framework integration pattern](#framework-integration-pattern)
-10. [CLI](#cli)
-11. [Persistence adapters](#persistence-adapters)
-12. [Architecture](#architecture)
-13. [Core concepts](#core-concepts)
-14. [JSON schemas](#json-schemas)
-15. [Tests](#tests)
-16. [Roadmap](#roadmap)
-17. [Security](#security)
-18. [License](#license)
+10. [Policy evaluation traces](#policy-evaluation-traces)
+11. [Semantic validation](#semantic-validation)
+12. [Redacted exports](#redacted-exports)
+13. [Tool adapter execution](#tool-adapter-execution)
+14. [CLI](#cli)
+15. [Persistence adapters](#persistence-adapters)
+16. [Architecture](#architecture)
+17. [Core concepts](#core-concepts)
+18. [JSON schemas](#json-schemas)
+19. [Tests](#tests)
+20. [Roadmap](#roadmap)
+21. [Security](#security)
+22. [License](#license)
 
 ---
 
@@ -101,7 +105,7 @@ auditable record-keeping layer.
 
 ## Limitations
 
-- No real tool execution is performed.
+- No built-in tool integrations are included; callers provide optional tool adapters.
 - No production key-management workflow is included.
 - No persistence backend beyond the simple filesystem adapter is included.
 - No full policy DSL is included.
@@ -171,6 +175,7 @@ python examples/simple_agent_run.py
 python examples/tool_policy_demo.py
 python examples/policy_config_demo.py
 python examples/framework_integration_demo.py
+python examples/tool_adapter_demo.py
 ```
 
 `examples/sample_run_record.json` shows a realistic output from
@@ -227,13 +232,55 @@ can be adapted to LangChain, OpenAI Agents, or other agent frameworks.
 
 ---
 
+## Policy evaluation traces
+
+`PolicyGate.evaluate_with_trace()` returns the same policy decision result as
+`evaluate()`, plus an ordered `PolicyEvaluationTrace`. Each trace records the
+rule path, the matching rule, the final result, and the same deterministic
+fingerprint stored on the `PolicyDecision`. `RunRecorder` stores traces by
+default and includes them in `RunRecord` and `ReplayBundle` exports.
+
+---
+
+## Semantic validation
+
+`validate_run_record()` and `validate_replay_bundle()` check more than Pydantic
+structure. They verify run ID consistency, action references, blocked-action
+links, policy trace relationships, and missing outputs. Validation produces a
+compact `ValidationReport` with warning and error issues. CLI validation uses
+these reports and does not print full records.
+
+---
+
+## Redacted exports
+
+`redact_run_record()` and `redact_replay_bundle()` return deep copies with
+privacy-safe redaction. Payloads are redacted by default, and optional settings
+can also redact targets, final output, and recorded reasons. IDs, timestamps,
+decision results, fingerprints, and trace relationships are preserved so the
+export remains useful for replay and audit workflows.
+
+---
+
+## Tool adapter execution
+
+`execute_with_control()` is a small adapter pattern for public-safe tool
+execution. It records an action proposal, evaluates it through the policy gate,
+and only calls a provided `ToolAdapter` when the decision result is `"allow"`.
+Successful executions can add a reliance record without turning this package
+into a full agent framework. See `examples/tool_adapter_demo.py`.
+
+---
+
 ## CLI
 
-The package includes a small CLI for validating and signing exported JSON:
+The package includes a small CLI for validation, redaction, and signing:
 
 ```bash
 acp validate-run examples/sample_run_record.json
 acp validate-replay path/to/replay_bundle.json
+acp redact-run examples/sample_run_record.json --out path/to/redacted_run_record.json
+acp redact-replay path/to/replay_bundle.json --out path/to/redacted_replay_bundle.json --reasons
 acp sign-replay path/to/replay_bundle.json --secret "shared-secret" --out path/to/signed_replay_bundle.json
 acp verify-signed-replay path/to/signed_replay_bundle.json --secret "shared-secret"
 ```
@@ -306,9 +353,16 @@ JSON Schema Draft 2020-12 files are in the `schemas/` directory:
 | `schemas/run_record.schema.json` | `RunRecord` |
 | `schemas/action_proposal.schema.json` | `ActionProposal` |
 | `schemas/policy_decision.schema.json` | `PolicyDecision` |
+| `schemas/policy_rule_evaluation.schema.json` | `PolicyRuleEvaluation` |
+| `schemas/policy_evaluation_trace.schema.json` | `PolicyEvaluationTrace` |
 | `schemas/authority_record.schema.json` | `AuthorityRecord` |
 | `schemas/reliance_record.schema.json` | `RelianceRecord` |
+| `schemas/validation_issue.schema.json` | `ValidationIssue` |
+| `schemas/validation_report.schema.json` | `ValidationReport` |
+| `schemas/redaction_config.schema.json` | `RedactionConfig` |
+| `schemas/tool_execution_result.schema.json` | `ToolExecutionResult` |
 | `schemas/replay_bundle.schema.json` | `ReplayBundle` |
+| `schemas/signed_replay_bundle.schema.json` | `SignedReplayBundle` |
 
 ---
 
@@ -319,6 +373,7 @@ pip install -e ".[dev]"
 pytest
 python examples/policy_config_demo.py
 python examples/framework_integration_demo.py
+python examples/tool_adapter_demo.py
 acp --help
 acp validate-run examples/sample_run_record.json
 ```
@@ -334,6 +389,10 @@ Test coverage:
 - `test_run_recorder.py` – recorder action/run validation
 - `test_signing.py` – replay bundle signing and verification
 - `test_policy_config.py` – config loading and demo behavior
+- `test_policy_traces.py` – evaluation trace generation and recorder storage
+- `test_validation.py` – semantic validation report behavior
+- `test_redaction.py` – redacted export helpers
+- `test_tool_adapter.py` – tool adapter execution flow
 - `test_framework_integration_demo.py` – mock framework adapter example
 - `test_cli.py` – CLI validation and signing commands
 - `test_persistence.py` – filesystem persistence round-trips
@@ -345,7 +404,7 @@ Test coverage:
 See [docs/roadmap.md](docs/roadmap.md).
 
 - **Phase 1** – Deterministic policy gate and run records *(current)*
-- **MVP extensions** – Signed replay bundles, policy config example, CLI validation, framework integration example, filesystem persistence
+- **MVP extensions** – Signed replay bundles, policy traces, semantic validation, redacted exports, tool adapter execution, policy config helpers, CLI support, framework integration example, filesystem persistence
 - **Phase 2** – Optional replay viewer and richer config tooling
 - **Phase 3** – Broader integration hooks and richer export utilities
 - **Phase 4** – Deeper action classification and context-change records

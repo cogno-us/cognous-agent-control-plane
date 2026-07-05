@@ -47,12 +47,31 @@ Key fields:
 - **result** – one of `"allow"`, `"block"`, or `"escalate"`.
 - **policy_name** – the name of the rule that determined the outcome.
 - **reason** – a human-readable explanation.
+- **trace_id** – optional reference to a `PolicyEvaluationTrace`.
 - **deterministic_fingerprint** – a SHA-256 hex digest of the canonical
   inputs (tool name, action type, target, allowed/blocked tools, policy
   version, active authority scopes).  Identical inputs always produce the
   same result and fingerprint, enabling verification that a decision was
   reached correctly.  The `decision_id` and `decided_at` fields are
   generated per evaluation.
+
+---
+
+## PolicyEvaluationTrace
+
+A **PolicyEvaluationTrace** records the ordered rule path used by the policy
+gate for one `ActionProposal`.
+
+It includes:
+
+- `trace_id`
+- `action_id`
+- `rules_evaluated`
+- `final_result`
+- `deterministic_fingerprint`
+
+Each entry in `rules_evaluated` is a `PolicyRuleEvaluation` with the rule name,
+whether it matched, the rule result, and a short reason.
 
 ---
 
@@ -117,6 +136,7 @@ It contains:
 - The `Frame`
 - All `ActionProposal` records
 - All `PolicyDecision` records
+- All `PolicyEvaluationTrace` records
 - All `AuthorityRecord` records
 - All `RelianceRecord` records
 - All `BlockedAction` records
@@ -125,6 +145,51 @@ It contains:
 Bundles can be serialised to JSON via `replay.to_json()` and deserialised
 via `replay.from_json()`.  They are intended for offline audit, compliance
 review, or replay simulation.
+
+---
+
+## ValidationReport
+
+A **ValidationReport** is the semantic validation result for a `RunRecord` or
+`ReplayBundle`.
+
+It includes:
+
+- `valid` – `True` when no error-severity issues are present
+- `checked_object_type` – `RunRecord` or `ReplayBundle`
+- `checked_id` – identifier of the checked object
+- `issues` – list of `ValidationIssue` objects
+
+Each `ValidationIssue` has a severity (`"error"` or `"warning"`), a stable
+code, a human-readable message, and an optional path.
+
+---
+
+## RedactionConfig
+
+A **RedactionConfig** controls privacy-safe export redaction.
+
+It can redact:
+
+- action payloads
+- action targets
+- final output
+- recorded reasons
+
+Redaction preserves IDs, timestamps, policy names, fingerprints, and trace
+relationships so exports remain usable for replay and audit workflows.
+
+---
+
+## ToolAdapter and ToolExecutionResult
+
+A **ToolAdapter** is a minimal execution interface with `name`,
+`action_type`, and `execute(target, payload) -> dict`.
+
+`execute_with_control()` uses a `ToolAdapter` only after the policy gate
+returns `"allow"`. The returned **ToolExecutionResult** records the `action_id`,
+`run_id`, whether execution was attempted, the adapter result payload, and any
+error message.
 
 ---
 
