@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_decision.schema.json",
+  "title": "PolicyDecision",
+  "description": "The outcome of a policy gate evaluation for one ActionProposal.",
+  "type": "object",
+  "required": [
+    "decision_id", "action_id", "run_id", "result",
+    "policy_name", "reason", "decided_at", "deterministic_fingerprint"
+  ],
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "description": "Unique identifier for this policy decision."
+    },
+    "action_id": {
+      "type": "string",
+      "description": "The ActionProposal this decision applies to."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the run this decision belongs to."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["allow", "block", "escalate"],
+      "description": "Policy outcome."
+    },
+    "policy_name": {
+      "type": "string",
+      "description": "Name of the policy rule that was applied."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable explanation of the decision."
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this decision was made."
+    },
+    "deterministic_fingerprint": {
+      "type": "string",
+      "description": "Stable SHA-256 hex digest of the canonical decision inputs. Identical inputs always produce the same fingerprint."
+    }
+  },
+  "additionalProperties": false
+}

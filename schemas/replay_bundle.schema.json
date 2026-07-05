@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/replay_bundle.schema.json",
+  "title": "ReplayBundle",
+  "description": "A self-contained, replayable snapshot of a completed agent run. Contains everything needed to reconstruct or audit the run.",
+  "type": "object",
+  "required": [
+    "replay_bundle_id", "run_id", "generated_at", "frame",
+    "actions", "decisions", "authority_records",
+    "reliance_records", "blocked_actions"
+  ],
+  "properties": {
+    "replay_bundle_id": {
+      "type": "string",
+      "description": "Unique identifier for this replay bundle."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "The run this bundle was generated from."
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this bundle was generated."
+    },
+    "frame": {
+      "type": "object",
+      "description": "Execution frame for the run.",
+      "required": ["frame_id", "task", "actor", "environment", "allowed_tools", "blocked_tools", "policy_version", "created_at"],
+      "properties": {
+        "frame_id": { "type": "string" },
+        "task": { "type": "string" },
+        "actor": { "type": "string" },
+        "environment": { "type": "string" },
+        "allowed_tools": { "type": "array", "items": { "type": "string" } },
+        "blocked_tools": { "type": "array", "items": { "type": "string" } },
+        "policy_version": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/action_proposal.schema.json" },
+      "description": "All action proposals from the run."
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_decision.schema.json" },
+      "description": "All policy decisions from the run."
+    },
+    "authority_records": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/authority_record.schema.json" },
+      "description": "Authority records active during the run."
+    },
+    "reliance_records": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/reliance_record.schema.json" },
+      "description": "External-source reliance records from the run."
+    },
+    "blocked_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["blocked_id", "action_id", "run_id", "reason", "policy_name", "blocked_at"],
+        "properties": {
+          "blocked_id": { "type": "string" },
+          "action_id": { "type": "string" },
+          "run_id": { "type": "string" },
+          "reason": { "type": "string" },
+          "policy_name": { "type": "string" },
+          "blocked_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "description": "Actions that were blocked during the run."
+    },
+    "final_output": {
+      "type": ["string", "null"],
+      "description": "Final output produced by the agent."
+    }
+  },
+  "additionalProperties": false
+}

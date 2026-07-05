@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/action_proposal.schema.json",
+  "title": "ActionProposal",
+  "description": "A proposed action that the agent wishes to execute, recorded before any tool is called.",
+  "type": "object",
+  "required": ["action_id", "run_id", "tool_name", "action_type", "target", "payload", "proposed_at"],
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "description": "Unique identifier for this action proposal."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the run this proposal belongs to."
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "Name of the tool the agent wants to call."
+    },
+    "action_type": {
+      "type": "string",
+      "description": "Semantic type of the action, e.g. 'read', 'write', 'external_send'."
+    },
+    "target": {
+      "type": "string",
+      "description": "Target resource or endpoint the action operates on."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Arguments or payload the agent wants to pass to the tool."
+    },
+    "proposed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this proposal was created."
+    },
+    "reason": {
+      "type": ["string", "null"],
+      "description": "Optional explanation from the agent for why this action is needed."
+    }
+  },
+  "additionalProperties": false
+}

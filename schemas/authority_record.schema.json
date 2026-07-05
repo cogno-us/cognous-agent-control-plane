@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/authority_record.schema.json",
+  "title": "AuthorityRecord",
+  "description": "Records the authority granted to an actor for a specific scope within a run.",
+  "type": "object",
+  "required": ["authority_id", "run_id", "actor", "scope", "source", "created_at"],
+  "properties": {
+    "authority_id": {
+      "type": "string",
+      "description": "Unique identifier for this authority record."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the run this authority applies to."
+    },
+    "actor": {
+      "type": "string",
+      "description": "The actor being granted authority."
+    },
+    "scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of permission scopes granted, e.g. ['read', 'write']."
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Optional ISO-8601 timestamp when this authority expires."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where the authority was granted from, e.g. 'user_consent'."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this record was created."
+    }
+  },
+  "additionalProperties": false
+}
