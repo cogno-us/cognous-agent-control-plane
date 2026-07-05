@@ -21,14 +21,19 @@ traces.
 3. [What this MVP records](#what-this-mvp-records)
 4. [What this is not](#what-this-is-not)
 5. [Quickstart](#quickstart)
-6. [Example](#example)
-7. [Architecture](#architecture)
-8. [Core concepts](#core-concepts)
-9. [JSON schemas](#json-schemas)
-10. [Tests](#tests)
-11. [Roadmap](#roadmap)
-12. [Security](#security)
-13. [License](#license)
+6. [Examples](#examples)
+7. [Optional signed replay bundles](#optional-signed-replay-bundles)
+8. [Policy configuration example](#policy-configuration-example)
+9. [Framework integration pattern](#framework-integration-pattern)
+10. [CLI](#cli)
+11. [Persistence adapters](#persistence-adapters)
+12. [Architecture](#architecture)
+13. [Core concepts](#core-concepts)
+14. [JSON schemas](#json-schemas)
+15. [Tests](#tests)
+16. [Roadmap](#roadmap)
+17. [Security](#security)
+18. [License](#license)
 
 ---
 
@@ -97,9 +102,9 @@ auditable record-keeping layer.
 ## Limitations
 
 - No real tool execution is performed.
-- No cryptographic signing of run records yet.
-- No persistence backend yet.
-- No policy DSL yet.
+- No production key-management workflow is included.
+- No persistence backend beyond the simple filesystem adapter is included.
+- No full policy DSL is included.
 - No dashboard or replay viewer yet.
 - Correctness depends on the policy rules supplied by the implementer.
 
@@ -109,6 +114,8 @@ auditable record-keeping layer.
 
 ```bash
 pip install -e ".[dev]"
+pytest
+acp validate-run examples/sample_run_record.json
 ```
 
 ```python
@@ -155,17 +162,96 @@ bundle = recorder.generate_replay_bundle()
 
 ---
 
-## Example
+## Examples
 
 Run the included examples from the repository root:
 
 ```bash
 python examples/simple_agent_run.py
 python examples/tool_policy_demo.py
+python examples/policy_config_demo.py
+python examples/framework_integration_demo.py
 ```
 
 `examples/sample_run_record.json` shows a realistic output from
 `simple_agent_run.py`.
+
+---
+
+## Optional signed replay bundles
+
+Replay bundles can be signed with HMAC-SHA256 for optional export integrity
+verification.
+
+```python
+from agent_control_plane import sign_replay_bundle, verify_signed_replay_bundle
+
+signed = sign_replay_bundle(bundle, "shared-secret")
+assert verify_signed_replay_bundle(signed, "shared-secret")
+```
+
+This adds integrity metadata to exported replay bundles. It is not production
+key management and not a complete security boundary by itself.
+
+---
+
+## Policy configuration example
+
+`examples/policy_config.json` shows a small JSON policy file with:
+
+- allow and block lists for tools
+- simple authority requirements by action type
+- a policy version and default action label
+
+Use it to derive a `Frame` without introducing a full policy DSL:
+
+```bash
+python examples/policy_config_demo.py
+```
+
+---
+
+## Framework integration pattern
+
+`examples/framework_integration_demo.py` shows how a framework adapter can sit
+beside this package:
+
+1. the agent proposes an action
+2. `RunRecorder` records and evaluates it
+3. only allowed actions execute
+4. reliance is recorded when an action is used
+5. the run completes and produces a replay bundle
+
+The example uses a mock adapter and no external credentials. The same pattern
+can be adapted to LangChain, OpenAI Agents, or other agent frameworks.
+
+---
+
+## CLI
+
+The package includes a small CLI for validating and signing exported JSON:
+
+```bash
+acp validate-run examples/sample_run_record.json
+acp validate-replay path/to/replay_bundle.json
+acp sign-replay path/to/replay_bundle.json --secret "shared-secret" --out path/to/signed_replay_bundle.json
+acp verify-signed-replay path/to/signed_replay_bundle.json --secret "shared-secret"
+```
+
+Commands return:
+
+- `0` on success
+- `1` on validation or signature failure
+- `2` on usage or file lookup errors
+
+---
+
+## Persistence adapters
+
+`FileSystemPersistenceAdapter` provides a minimal reference implementation for
+storing run records and replay bundles as JSON files under a local directory.
+It is intentionally small and does not attempt to be a production storage
+platform.
 
 ---
 
@@ -231,6 +317,10 @@ JSON Schema Draft 2020-12 files are in the `schemas/` directory:
 ```bash
 pip install -e ".[dev]"
 pytest
+python examples/policy_config_demo.py
+python examples/framework_integration_demo.py
+acp --help
+acp validate-run examples/sample_run_record.json
 ```
 
 Test coverage:
@@ -242,6 +332,11 @@ Test coverage:
 - `test_reliance_record.py` – reliance record creation and linkage
 - `test_determinism.py` – fingerprint stability and JSON export round-trip
 - `test_run_recorder.py` – recorder action/run validation
+- `test_signing.py` – replay bundle signing and verification
+- `test_policy_config.py` – config loading and demo behavior
+- `test_framework_integration_demo.py` – mock framework adapter example
+- `test_cli.py` – CLI validation and signing commands
+- `test_persistence.py` – filesystem persistence round-trips
 
 ---
 
@@ -250,10 +345,11 @@ Test coverage:
 See [docs/roadmap.md](docs/roadmap.md).
 
 - **Phase 1** – Deterministic policy gate and run records *(current)*
-- **Phase 2** – Policy configuration and dashboard
-- **Phase 3** – Replay viewer and signed run exports
+- **MVP extensions** – Signed replay bundles, policy config example, CLI validation, framework integration example, filesystem persistence
+- **Phase 2** – Optional replay viewer and richer config tooling
+- **Phase 3** – Broader integration hooks and richer export utilities
 - **Phase 4** – Deeper action classification and context-change records
-- **Phase 5** – Enterprise integrations
+- **Phase 5** – Additional ecosystem integrations
 
 ---
 

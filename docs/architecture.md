@@ -80,6 +80,16 @@ A `ReplayBundle` is a self-contained export of a completed run.  It
 includes every record needed to reconstruct what happened, enabling
 offline audit, replay simulation, or compliance review.
 
+### Optional utilities
+
+The package also includes a few additive utilities that sit around the core
+recording flow:
+
+- `signing` for optional HMAC-based replay bundle integrity checks
+- `policy_config` for loading small JSON examples into `Frame` objects
+- `cli` for validating and signing exported JSON files
+- `persistence` for a minimal adapter interface and filesystem storage
+
 ## Data flow
 
 ```
@@ -119,3 +129,5 @@ generate_replay_bundle() → ReplayBundle
   dependencies.
 - **Minimal dependencies**: only the Python standard library and Pydantic
   are required.
+- **Additive utilities**: signing, validation, and persistence helpers stay
+  optional and do not turn the package into a full agent platform.

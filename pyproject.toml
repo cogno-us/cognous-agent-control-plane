@@ -19,6 +19,9 @@ dev = [
     "pytest-cov",
 ]
 
+[project.scripts]
+acp = "agent_control_plane.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

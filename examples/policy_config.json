@@ -1,0 +1,20 @@
+{
+  "policy_version": "v1.1",
+  "allowed_tools": [
+    "crm_read",
+    "email_send",
+    "notes_write"
+  ],
+  "blocked_tools": [
+    "file_delete"
+  ],
+  "authority_required": {
+    "external_send": [
+      "external_send"
+    ],
+    "write": [
+      "write"
+    ]
+  },
+  "default_action": "escalate"
+}

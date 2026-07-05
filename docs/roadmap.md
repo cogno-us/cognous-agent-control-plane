@@ -4,7 +4,7 @@ This roadmap describes the planned phases for Agent Control Plane.
 
 ---
 
-## Phase 1 – Deterministic policy gate and run records *(current)*
+## Phase 1 – Deterministic policy gate and run records
 
 - Deterministic policy gate with allow, block, and escalate outcomes.
 - Stable `deterministic_fingerprint` for every policy decision.
@@ -16,21 +16,33 @@ This roadmap describes the planned phases for Agent Control Plane.
 
 ---
 
-## Phase 2 – Policy configuration and dashboard
+## MVP extensions *(current)*
 
-- External policy configuration via YAML or JSON files.
-- Rule-based policy definitions without code changes.
-- CLI tool for loading and validating policy configs.
-- Simple web dashboard for viewing run records and decisions.
+- Optional signed replay bundles using HMAC-SHA256.
+- JSON policy configuration example and demo helpers.
+- Dependency-light framework integration example with a mock adapter.
+- CLI validation and replay signing commands.
+- Minimal persistence interface plus filesystem adapter.
+
+These extensions keep the project positioned as a compact runtime control and
+replay layer. They are not a full policy DSL, enterprise platform, or
+production key-management solution.
 
 ---
 
-## Phase 3 – Replay viewer and signed run exports
+## Phase 2 – Richer config tooling and replay utilities
 
-- Interactive replay viewer showing the step-by-step run timeline.
-- Cryptographically signed run exports for tamper-evident audit trails.
-- Signature verification tooling.
-- Diff view comparing two run records.
+- More expressive policy configuration without turning into a full DSL.
+- Additional replay inspection and comparison utilities.
+- Optional viewer for inspecting run records and decisions.
+
+---
+
+## Phase 3 – Broader ecosystem adapters
+
+- Framework adapter examples beyond the mock reference integration.
+- Additional persistence adapters that remain optional and lightweight.
+- Export helpers for larger workflow pipelines.
 
 ---
 
@@ -43,9 +55,8 @@ This roadmap describes the planned phases for Agent Control Plane.
 
 ---
 
-## Phase 5 – Enterprise integrations
+## Phase 5 – Additional integrations
 
-- Connectors for common enterprise tooling (SIEM, ticketing, identity providers).
-- Webhook delivery for real-time decision notifications.
-- Role-based access control for run record retrieval.
-- Multi-run aggregation and trend reporting.
+- Optional connectors for common workflow tooling.
+- Extra delivery hooks for downstream automation.
+- Lightweight aggregation helpers where they fit the minimal package scope.
