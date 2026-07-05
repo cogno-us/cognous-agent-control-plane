@@ -56,6 +56,22 @@ Key fields:
 
 ---
 
+  ## PolicyEvaluationTrace
+
+  A **PolicyEvaluationTrace** records how the policy gate reached a decision.
+
+  It includes:
+
+  - the ordered list of evaluated rules
+  - whether each rule matched
+  - the final result
+  - the same deterministic fingerprint as the related `PolicyDecision`
+
+  This makes it easier to review why an action was allowed, blocked, or
+  escalated without changing the decision itself.
+
+  ---
+
 ## BlockedAction
 
 A **BlockedAction** record is created automatically whenever a
@@ -125,6 +141,45 @@ It contains:
 Bundles can be serialised to JSON via `replay.to_json()` and deserialised
 via `replay.from_json()`.  They are intended for offline audit, compliance
 review, or replay simulation.
+
+---
+
+## ValidationReport
+
+A **ValidationReport** summarizes whether a `RunRecord` or `ReplayBundle` is
+internally consistent.
+
+It contains:
+
+- `valid` – whether any validation errors were found
+- `checked_object_type` – `RunRecord` or `ReplayBundle`
+- `checked_id` – identifier of the checked object
+- `issues` – warnings or errors with short codes and optional paths
+
+Validation reports help catch missing references, mismatched run IDs, and trace
+or blocked-action inconsistencies before export or replay.
+
+---
+
+## Redacted export
+
+A **redacted export** is a copy of a run record or replay bundle with selected
+fields replaced for safer sharing.
+
+Redaction can remove payloads, targets, final output, and reasons while keeping
+IDs, timestamps, statuses, policy names, and fingerprints unchanged. This keeps
+the export structure useful for replay and audit metadata.
+
+---
+
+## ToolAdapter
+
+A **ToolAdapter** is a small interface for optional tool execution after policy
+evaluation.
+
+It does not turn Agent Control Plane into an agent framework. Instead, it lets
+an integration layer execute a specific tool only after the policy gate returns
+`allow`, and then record the resulting reliance metadata.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Runtime control and replay for AI agents.**
 
-Agent Control Plane is a minimal runtime governance layer for AI-agent
+Agent Control Plane is a minimal runtime control layer for AI-agent
 workflows. It records proposed actions, policy decisions, blocked
 operations, authority context, external-source reliance, and replayable run
 traces.
@@ -23,17 +23,21 @@ traces.
 5. [Quickstart](#quickstart)
 6. [Examples](#examples)
 7. [Optional signed replay bundles](#optional-signed-replay-bundles)
-8. [Policy configuration example](#policy-configuration-example)
-9. [Framework integration pattern](#framework-integration-pattern)
-10. [CLI](#cli)
-11. [Persistence adapters](#persistence-adapters)
-12. [Architecture](#architecture)
-13. [Core concepts](#core-concepts)
-14. [JSON schemas](#json-schemas)
-15. [Tests](#tests)
-16. [Roadmap](#roadmap)
-17. [Security](#security)
-18. [License](#license)
+8. [Policy evaluation traces](#policy-evaluation-traces)
+9. [Replay validation](#replay-validation)
+10. [Redacted exports](#redacted-exports)
+11. [Tool adapter pattern](#tool-adapter-pattern)
+12. [Policy configuration example](#policy-configuration-example)
+13. [Framework integration pattern](#framework-integration-pattern)
+14. [CLI](#cli)
+15. [Persistence adapters](#persistence-adapters)
+16. [Architecture](#architecture)
+17. [Core concepts](#core-concepts)
+18. [JSON schemas](#json-schemas)
+19. [Tests](#tests)
+20. [Roadmap](#roadmap)
+21. [Security](#security)
+22. [License](#license)
 
 ---
 
@@ -80,6 +84,7 @@ auditable record-keeping layer.
 | `Frame` | Execution context: actor, environment, allowed/blocked tools, policy version |
 | `ActionProposal` | Every action the agent proposed, before execution |
 | `PolicyDecision` | Allow / block / escalate outcome for each proposal, with fingerprint |
+| `PolicyEvaluationTrace` | Ordered rule-by-rule trace for each policy decision |
 | `BlockedAction` | Automatically created when a decision is `"block"` |
 | `AuthorityRecord` | Scoped permissions granted to the actor for the run |
 | `RelianceRecord` | External sources and tools the agent relied on |
@@ -101,7 +106,7 @@ auditable record-keeping layer.
 
 ## Limitations
 
-- No real tool execution is performed.
+- No tool execution is performed unless you supply a local tool adapter.
 - No production key-management workflow is included.
 - No persistence backend beyond the simple filesystem adapter is included.
 - No full policy DSL is included.
@@ -171,6 +176,7 @@ python examples/simple_agent_run.py
 python examples/tool_policy_demo.py
 python examples/policy_config_demo.py
 python examples/framework_integration_demo.py
+python examples/tool_adapter_demo.py
 ```
 
 `examples/sample_run_record.json` shows a realistic output from
@@ -192,6 +198,42 @@ assert verify_signed_replay_bundle(signed, "shared-secret")
 
 This adds integrity metadata to exported replay bundles. It is not production
 key management and not a complete security boundary by itself.
+
+---
+
+## Policy evaluation traces
+
+Every policy decision can include an evaluation trace that records the rule
+order, which rule matched, and why the final result was reached. Traces carry
+the same deterministic fingerprint as the related decision, so replay bundles
+and run records preserve verifiable audit metadata.
+
+---
+
+## Replay validation
+
+Use `validate_run_record()` or `validate_replay_bundle()` to check internal
+consistency before sharing or replaying exported data. Validation reports flag
+run ID mismatches, missing action references, blocked-action inconsistencies,
+and trace mismatches. CLI validation returns `1` only when errors are present.
+
+---
+
+## Redacted exports
+
+Use `redact_run_record()` or `redact_replay_bundle()` to produce public-safe
+exports without mutating the originals. Payloads are redacted by default, and
+optional settings can also replace targets, final output, and reasons while
+preserving IDs, timestamps, results, and fingerprints.
+
+---
+
+## Tool adapter pattern
+
+`execute_with_control()` provides a small wrapper for optional tool execution.
+It records the action proposal, evaluates it through the policy gate, and only
+calls a `ToolAdapter` when the decision is `allow`. Successful execution can
+add a reliance record without turning this package into an agent framework.
 
 ---
 
@@ -229,11 +271,13 @@ can be adapted to LangChain, OpenAI Agents, or other agent frameworks.
 
 ## CLI
 
-The package includes a small CLI for validating and signing exported JSON:
+The package includes a small CLI for validation, redaction, and signing:
 
 ```bash
 acp validate-run examples/sample_run_record.json
 acp validate-replay path/to/replay_bundle.json
+acp redact-run examples/sample_run_record.json --out path/to/redacted_run.json --targets
+acp redact-replay path/to/replay_bundle.json --out path/to/redacted_replay_bundle.json --reasons
 acp sign-replay path/to/replay_bundle.json --secret "shared-secret" --out path/to/signed_replay_bundle.json
 acp verify-signed-replay path/to/signed_replay_bundle.json --secret "shared-secret"
 ```
@@ -266,11 +310,19 @@ Action Proposal
    ↓
 Policy Gate
    ↓
+Policy Decision + Evaluation Trace
+   ↓
 Allow / Block / Escalate
+   ↓
+Optional Tool Adapter Execution
    ↓
 Run Record
    ↓
+Validation Report
+   ↓
 Replay Bundle
+   ↓
+Optional Redacted or Signed Export
 ```
 
 See [docs/architecture.md](docs/architecture.md) for full details.
@@ -287,6 +339,7 @@ The `decision_id` and `decided_at` fields are generated per evaluation.
 | **Frame** | Immutable execution context for a run |
 | **ActionProposal** | Proposed tool call, recorded before execution |
 | **PolicyDecision** | Gate outcome with stable result and fingerprint; IDs and timestamps are per evaluation |
+| **PolicyEvaluationTrace** | Ordered explanation of how a decision was reached |
 | **BlockedAction** | Auto-created record for every blocked decision |
 | **AuthorityRecord** | Scoped permission grant for the run |
 | **RelianceRecord** | External-source dependency record |
@@ -306,9 +359,14 @@ JSON Schema Draft 2020-12 files are in the `schemas/` directory:
 | `schemas/run_record.schema.json` | `RunRecord` |
 | `schemas/action_proposal.schema.json` | `ActionProposal` |
 | `schemas/policy_decision.schema.json` | `PolicyDecision` |
+| `schemas/policy_evaluation_trace.schema.json` | `PolicyEvaluationTrace` |
 | `schemas/authority_record.schema.json` | `AuthorityRecord` |
 | `schemas/reliance_record.schema.json` | `RelianceRecord` |
 | `schemas/replay_bundle.schema.json` | `ReplayBundle` |
+| `schemas/signed_replay_bundle.schema.json` | `SignedReplayBundle` |
+| `schemas/validation_report.schema.json` | `ValidationReport` |
+| `schemas/redaction_config.schema.json` | `RedactionConfig` |
+| `schemas/tool_execution_result.schema.json` | `ToolExecutionResult` |
 
 ---
 
@@ -326,16 +384,20 @@ acp validate-run examples/sample_run_record.json
 Test coverage:
 
 - `test_policy_gate.py` – allow, block, and escalate decisions; external-send authority
+- `test_policy_traces.py` – ordered evaluation traces and replay trace coverage
 - `test_frame_immutability.py` – frozen Frame behavior
 - `test_blocked_action.py` – blocked-action record creation
 - `test_replay_bundle.py` – bundle completeness and JSON round-trip
 - `test_reliance_record.py` – reliance record creation and linkage
 - `test_determinism.py` – fingerprint stability and JSON export round-trip
 - `test_run_recorder.py` – recorder action/run validation
+- `test_validation.py` – run-record and replay-bundle consistency checks
+- `test_redaction.py` – redacted export behavior and CLI output
+- `test_tool_adapter.py` – adapter execution control and reliance recording
 - `test_signing.py` – replay bundle signing and verification
 - `test_policy_config.py` – config loading and demo behavior
 - `test_framework_integration_demo.py` – mock framework adapter example
-- `test_cli.py` – CLI validation and signing commands
+- `test_cli.py` – CLI validation, redaction, and signing commands
 - `test_persistence.py` – filesystem persistence round-trips
 
 ---

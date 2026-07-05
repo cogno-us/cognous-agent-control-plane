@@ -20,8 +20,11 @@ This roadmap describes the planned phases for Agent Control Plane.
 
 - Optional signed replay bundles using HMAC-SHA256.
 - JSON policy configuration example and demo helpers.
-- Dependency-light framework integration example with a mock adapter.
-- CLI validation and replay signing commands.
+- Policy evaluation traces for rule-by-rule audit metadata.
+- Replay validation reports for run records and replay bundles.
+- Redacted export helpers for public-safe sharing.
+- Dependency-light tool adapter and framework integration examples.
+- CLI validation, redaction, and replay signing commands.
 - Minimal persistence interface plus filesystem adapter.
 
 These extensions keep the project positioned as a compact runtime control and
@@ -34,7 +37,7 @@ production key-management solution.
 
 - More expressive policy configuration without turning into a full DSL.
 - Additional replay inspection and comparison utilities.
-- Optional viewer for inspecting run records and decisions.
+- Optional inspection helpers for run records and decisions.
 
 ---
 

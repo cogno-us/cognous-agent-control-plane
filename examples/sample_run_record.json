@@ -1,9 +1,9 @@
 {
-  "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+  "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
   "task": "Summarize a customer record and draft an email.",
-  "created_at": "2026-07-05T11:10:39.914247+00:00",
+  "created_at": "2026-07-05T12:50:22.229483+00:00",
   "frame": {
-    "frame_id": "eaa6643b-6dd9-45b6-8196-a85e3e3f636e",
+    "frame_id": "a80aff54-50d2-4739-a6f2-af39888d7178",
     "task": "Summarize a customer record and draft an email.",
     "actor": "agent-v1",
     "environment": "production",
@@ -15,12 +15,12 @@
       "email_send"
     ],
     "policy_version": "v1.0",
-    "created_at": "2026-07-05T11:10:39.914247+00:00"
+    "created_at": "2026-07-05T12:50:22.229483+00:00"
   },
   "actions": [
     {
-      "action_id": "3af7dce2-5821-4cb2-9b04-0fe56c883a5a",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "action_id": "f19a43bb-2012-4329-b0c6-e4046f4a5f29",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "tool_name": "crm_read",
       "action_type": "read",
       "target": "customer:42",
@@ -31,12 +31,12 @@
           "account_status"
         ]
       },
-      "proposed_at": "2026-07-05T11:10:39.914355+00:00",
+      "proposed_at": "2026-07-05T12:50:22.229536+00:00",
       "reason": "Retrieve customer details to prepare the summary."
     },
     {
-      "action_id": "0189e5e4-968e-4b0e-a2ea-bcc96748c157",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "action_id": "9f1de743-b468-47b4-a648-bbac33fa84d3",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "tool_name": "email_send",
       "action_type": "external_send",
       "target": "customer@example.com",
@@ -44,64 +44,160 @@
         "subject": "Your account summary",
         "body": "<draft>"
       },
-      "proposed_at": "2026-07-05T11:10:39.914552+00:00",
+      "proposed_at": "2026-07-05T12:50:22.229664+00:00",
       "reason": "Send the prepared email draft to the customer."
     }
   ],
   "decisions": [
     {
-      "decision_id": "16047040-f613-4c0e-a0f8-98bd9c468878",
-      "action_id": "3af7dce2-5821-4cb2-9b04-0fe56c883a5a",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "decision_id": "6ecc9fdd-b699-4560-b325-d5900f8c6425",
+      "action_id": "f19a43bb-2012-4329-b0c6-e4046f4a5f29",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "result": "allow",
       "policy_name": "read_allowed_tool_policy",
       "reason": "Tool 'crm_read' is allowed and action type is 'read'.",
-      "decided_at": "2026-07-05T11:10:39.914466+00:00",
+      "trace_id": "9de88d45-19c5-4286-beb5-4b68d480006e",
+      "decided_at": "2026-07-05T12:50:22.229548+00:00",
       "deterministic_fingerprint": "8626cc9d9ac1caabdf1a8925dfb63dd0aecee8672603f35a50f652f5d2cdf5ac"
     },
     {
-      "decision_id": "21fe15a5-4edf-4d3a-8661-2a3988661422",
-      "action_id": "0189e5e4-968e-4b0e-a2ea-bcc96748c157",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "decision_id": "f6ada01d-8207-466e-b7ca-3a5449227ddb",
+      "action_id": "9f1de743-b468-47b4-a648-bbac33fa84d3",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "result": "block",
       "policy_name": "blocked_tool_policy",
       "reason": "Tool 'email_send' is explicitly blocked in this frame.",
-      "decided_at": "2026-07-05T11:10:39.914604+00:00",
+      "trace_id": "464b37ae-7f16-4360-9ae9-82de053538d8",
+      "decided_at": "2026-07-05T12:50:22.229671+00:00",
+      "deterministic_fingerprint": "b4f94d9f1fc8f8dd8056480afa292e80606ee8d65406a1b46a9605ed2991f3d5"
+    }
+  ],
+  "policy_traces": [
+    {
+      "trace_id": "9de88d45-19c5-4286-beb5-4b68d480006e",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
+      "action_id": "f19a43bb-2012-4329-b0c6-e4046f4a5f29",
+      "evaluated_at": "2026-07-05T12:50:22.229548+00:00",
+      "rules_evaluated": [
+        {
+          "rule_name": "blocked_tool_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Tool 'crm_read' is not explicitly blocked."
+        },
+        {
+          "rule_name": "unknown_tool_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Tool 'crm_read' is present in the allowed-tools list."
+        },
+        {
+          "rule_name": "external_send_authority_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Action type 'read' does not require this rule."
+        },
+        {
+          "rule_name": "read_allowed_tool_policy",
+          "matched": true,
+          "result": "allow",
+          "reason": "Tool 'crm_read' is allowed and action type is 'read'."
+        },
+        {
+          "rule_name": "write_authority_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Action type 'read' does not match 'write'."
+        },
+        {
+          "rule_name": "default_escalation_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "An earlier rule already determined the final result."
+        }
+      ],
+      "final_result": "allow",
+      "deterministic_fingerprint": "8626cc9d9ac1caabdf1a8925dfb63dd0aecee8672603f35a50f652f5d2cdf5ac"
+    },
+    {
+      "trace_id": "464b37ae-7f16-4360-9ae9-82de053538d8",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
+      "action_id": "9f1de743-b468-47b4-a648-bbac33fa84d3",
+      "evaluated_at": "2026-07-05T12:50:22.229671+00:00",
+      "rules_evaluated": [
+        {
+          "rule_name": "blocked_tool_policy",
+          "matched": true,
+          "result": "block",
+          "reason": "Tool 'email_send' is explicitly blocked in this frame."
+        },
+        {
+          "rule_name": "unknown_tool_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Tool 'email_send' is present in the allowed-tools list."
+        },
+        {
+          "rule_name": "external_send_authority_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Action type 'external_send' does not require this rule."
+        },
+        {
+          "rule_name": "read_allowed_tool_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Action type 'external_send' does not match 'read'."
+        },
+        {
+          "rule_name": "write_authority_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "Action type 'external_send' does not match 'write'."
+        },
+        {
+          "rule_name": "default_escalation_policy",
+          "matched": false,
+          "result": "none",
+          "reason": "An earlier rule already determined the final result."
+        }
+      ],
+      "final_result": "block",
       "deterministic_fingerprint": "b4f94d9f1fc8f8dd8056480afa292e80606ee8d65406a1b46a9605ed2991f3d5"
     }
   ],
   "authority_records": [
     {
-      "authority_id": "8ff4ab98-802e-479d-8168-b41d08a94cb2",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "authority_id": "63efb751-f192-4457-8136-f8e82148b542",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "actor": "agent-v1",
       "scope": [
         "read"
       ],
       "expires_at": null,
       "source": "user_consent",
-      "created_at": "2026-07-05T11:10:39.914315+00:00"
+      "created_at": "2026-07-05T12:50:22.229518+00:00"
     }
   ],
   "reliance_records": [
     {
-      "reliance_id": "97286e65-329c-4fb5-bf07-37b8219c04db",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "reliance_id": "e6808580-f362-41df-a663-96117c6524bf",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "source_name": "crm_read",
       "source_type": "tool",
       "scope": "customer record fields: name, email, account_status",
-      "referenced_action_id": "3af7dce2-5821-4cb2-9b04-0fe56c883a5a",
-      "created_at": "2026-07-05T11:10:39.914515+00:00"
+      "referenced_action_id": "f19a43bb-2012-4329-b0c6-e4046f4a5f29",
+      "created_at": "2026-07-05T12:50:22.229649+00:00"
     }
   ],
   "blocked_actions": [
     {
-      "blocked_id": "5981cf73-9013-436b-bbb3-84a8bdc2f897",
-      "action_id": "0189e5e4-968e-4b0e-a2ea-bcc96748c157",
-      "run_id": "069e07a8-5a60-4417-9903-2ddd194f0a37",
+      "blocked_id": "6c5278f4-412a-4004-b622-c01ab1dfdc52",
+      "action_id": "9f1de743-b468-47b4-a648-bbac33fa84d3",
+      "run_id": "1b46e318-7ef8-4788-9fe5-793617673d46",
       "reason": "Tool 'email_send' is explicitly blocked in this frame.",
       "policy_name": "blocked_tool_policy",
-      "blocked_at": "2026-07-05T11:10:39.914625+00:00"
+      "blocked_at": "2026-07-05T12:50:22.229734+00:00"
     }
   ],
   "completed": true,
