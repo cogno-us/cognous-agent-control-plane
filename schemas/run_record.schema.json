@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/run_record.schema.json",
+  "title": "RunRecord",
+  "description": "Complete record of a single agent run, including all proposed actions, policy decisions, authority records, reliance records, and blocked actions.",
+  "type": "object",
+  "required": [
+    "run_id", "task", "created_at", "frame",
+    "actions", "decisions", "authority_records",
+    "reliance_records", "blocked_actions", "completed"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for this run."
+    },
+    "task": {
+      "type": "string",
+      "description": "Top-level task description for the run."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the run was started."
+    },
+    "frame": {
+      "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/frame.schema.json",
+      "description": "Execution frame active for this run."
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/action_proposal.schema.json" },
+      "description": "All action proposals made during the run."
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_decision.schema.json" },
+      "description": "All policy decisions made during the run."
+    },
+    "authority_records": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/authority_record.schema.json" },
+      "description": "Authority records active during the run."
+    },
+    "reliance_records": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/reliance_record.schema.json" },
+      "description": "External-source reliance records from the run."
+    },
+    "blocked_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["blocked_id", "action_id", "run_id", "reason", "policy_name", "blocked_at"],
+        "properties": {
+          "blocked_id": { "type": "string" },
+          "action_id": { "type": "string" },
+          "run_id": { "type": "string" },
+          "reason": { "type": "string" },
+          "policy_name": { "type": "string" },
+          "blocked_at": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "description": "Actions that were blocked during the run."
+    },
+    "completed": {
+      "type": "boolean",
+      "description": "Whether the run has been marked as completed."
+    },
+    "final_output": {
+      "type": ["string", "null"],
+      "description": "Final output produced by the agent at the end of the run."
+    },
+    "replay_bundle_id": {
+      "type": ["string", "null"],
+      "description": "ID of the ReplayBundle generated for this run, if any."
+    }
+  },
+  "additionalProperties": false
+}

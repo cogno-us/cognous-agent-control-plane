@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/reliance_record.schema.json",
+  "title": "RelianceRecord",
+  "description": "Records a dependency on an external source or tool during a run.",
+  "type": "object",
+  "required": ["reliance_id", "run_id", "source_name", "source_type", "scope", "created_at"],
+  "properties": {
+    "reliance_id": {
+      "type": "string",
+      "description": "Unique identifier for this reliance record."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the run this reliance record belongs to."
+    },
+    "source_name": {
+      "type": "string",
+      "description": "Name of the source or tool relied upon."
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["tool", "database", "file", "api", "user_input", "model_output", "other"],
+      "description": "Category of the source."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Description of what was accessed or consumed from this source."
+    },
+    "referenced_action_id": {
+      "type": ["string", "null"],
+      "description": "Optional action_id of the ActionProposal that triggered this reliance."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this record was created."
+    }
+  },
+  "additionalProperties": false
+}

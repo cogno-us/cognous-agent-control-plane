@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: agent-control-plane
+Version: 0.1.0
+Summary: Runtime control and replay for AI agents.
+License: Apache-2.0
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pydantic>=2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Dynamic: license-file
+
+# cognous-agent-control-plane
+A minimal runtime control and replay layer for AI agents. It records proposed actions, authorization decisions, blocked actions, external-tool reliance, and replayable run traces before agents affect enterprise systems.
