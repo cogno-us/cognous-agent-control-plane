@@ -6,7 +6,7 @@
   "type": "object",
   "required": [
     "run_id", "task", "created_at", "frame",
-    "actions", "decisions", "authority_records",
+    "actions", "decisions", "policy_traces", "authority_records",
     "reliance_records", "blocked_actions", "completed"
   ],
   "properties": {
@@ -36,6 +36,11 @@
       "type": "array",
       "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_decision.schema.json" },
       "description": "All policy decisions made during the run."
+    },
+    "policy_traces": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_evaluation_trace.schema.json" },
+      "description": "Ordered policy evaluation traces captured during the run."
     },
     "authority_records": {
       "type": "array",

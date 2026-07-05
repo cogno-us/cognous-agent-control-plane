@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_evaluation_trace.schema.json",
+  "title": "PolicyEvaluationTrace",
+  "description": "Ordered record showing how the policy gate reached a decision for one action proposal.",
+  "type": "object",
+  "required": [
+    "trace_id",
+    "run_id",
+    "action_id",
+    "evaluated_at",
+    "rules_evaluated",
+    "final_result",
+    "deterministic_fingerprint"
+  ],
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "description": "Unique identifier for this policy trace."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Run that this trace belongs to."
+    },
+    "action_id": {
+      "type": "string",
+      "description": "Action proposal evaluated by this trace."
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when this trace was created."
+    },
+    "rules_evaluated": {
+      "type": "array",
+      "description": "Ordered list of rule evaluations.",
+      "items": {
+        "type": "object",
+        "required": ["rule_name", "matched", "result", "reason"],
+        "properties": {
+          "rule_name": {
+            "type": "string",
+            "description": "Name of the policy rule."
+          },
+          "matched": {
+            "type": "boolean",
+            "description": "Whether this rule determined the final result."
+          },
+          "result": {
+            "type": "string",
+            "enum": ["allow", "block", "escalate", "none"],
+            "description": "Outcome for this individual rule evaluation."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Explanation for this rule evaluation."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "final_result": {
+      "type": "string",
+      "enum": ["allow", "block", "escalate"],
+      "description": "Final policy result for the action proposal."
+    },
+    "deterministic_fingerprint": {
+      "type": "string",
+      "description": "Stable SHA-256 hex digest matching the related policy decision."
+    }
+  },
+  "additionalProperties": false
+}

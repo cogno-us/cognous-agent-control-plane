@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/redaction_config.schema.json",
+  "title": "RedactionConfig",
+  "description": "Controls redaction behavior for exported run records and replay bundles.",
+  "type": "object",
+  "properties": {
+    "redact_payloads": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether action payloads should be replaced with redaction markers."
+    },
+    "redact_targets": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether action targets should be replaced."
+    },
+    "redact_final_output": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether final output should be replaced."
+    },
+    "redact_reasons": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether action and policy reasons should be replaced."
+    },
+    "replacement": {
+      "type": "string",
+      "default": "[REDACTED]",
+      "description": "Replacement string used when redacting string fields."
+    }
+  },
+  "additionalProperties": false
+}

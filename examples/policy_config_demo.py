@@ -6,6 +6,7 @@ from pathlib import Path
 
 from agent_control_plane import (
     PolicyGate,
+    authority_records_from_policy_config,
     frame_from_policy_config,
     load_policy_config,
 )
@@ -35,9 +36,19 @@ def run_demo(config_path: str | Path = CONFIG_PATH) -> dict[str, object]:
         environment="sandbox",
     )
     gate = PolicyGate()
+    authority_records = authority_records_from_policy_config(
+        config,
+        run_id="policy-config-demo",
+        actor="demo-agent",
+    )
 
     allowed_action = _make_action("crm_read", "read", "customer:42")
-    authority_required_action = _make_action(
+    blocked_without_authority_action = _make_action(
+        "email_send",
+        "external_send",
+        "customer@example.com",
+    )
+    allowed_with_authority_action = _make_action(
         "email_send",
         "external_send",
         "customer@example.com",
@@ -45,21 +56,32 @@ def run_demo(config_path: str | Path = CONFIG_PATH) -> dict[str, object]:
     escalated_action = _make_action("unknown_tool", "read", "resource:unknown")
 
     allowed_decision = gate.evaluate(allowed_action, frame, [])
-    blocked_decision = gate.evaluate(authority_required_action, frame, [])
+    blocked_decision = gate.evaluate(blocked_without_authority_action, frame, [])
+    authority_allowed_decision = gate.evaluate(
+        allowed_with_authority_action,
+        frame,
+        authority_records,
+    )
     escalated_decision = gate.evaluate(escalated_action, frame, [])
 
     print(f"allow     {allowed_action.tool_name} -> {allowed_decision.result}")
     print(
-        f"authority {authority_required_action.tool_name} "
+        f"authority {blocked_without_authority_action.tool_name} "
         f"-> {blocked_decision.result}"
+    )
+    print(
+        f"config    {allowed_with_authority_action.tool_name} "
+        f"-> {authority_allowed_decision.result}"
     )
     print(f"default   {escalated_action.tool_name} -> {escalated_decision.result}")
 
     return {
         "config": config,
         "frame": frame,
+        "authority_records": authority_records,
         "allowed_decision": allowed_decision,
         "blocked_decision": blocked_decision,
+        "authority_allowed_decision": authority_allowed_decision,
         "escalated_decision": escalated_decision,
     }
 

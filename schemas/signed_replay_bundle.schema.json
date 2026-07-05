@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/signed_replay_bundle.schema.json",
+  "title": "SignedReplayBundle",
+  "description": "Replay bundle plus integrity metadata for export verification.",
+  "type": "object",
+  "required": [
+    "signed_bundle_id",
+    "replay_bundle",
+    "signature",
+    "signature_algorithm",
+    "signed_at"
+  ],
+  "properties": {
+    "signed_bundle_id": {
+      "type": "string",
+      "description": "Unique identifier for this signed replay bundle."
+    },
+    "replay_bundle": {
+      "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/replay_bundle.schema.json",
+      "description": "Replay bundle covered by the signature."
+    },
+    "signature": {
+      "type": "string",
+      "description": "Hex-encoded signature for the replay bundle."
+    },
+    "signature_algorithm": {
+      "type": "string",
+      "description": "Signature algorithm used for the bundle export."
+    },
+    "signed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the bundle was signed."
+    }
+  },
+  "additionalProperties": false
+}

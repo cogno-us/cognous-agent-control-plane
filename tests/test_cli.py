@@ -57,7 +57,7 @@ def test_validate_run_returns_zero_for_valid_record(tmp_path: Path) -> None:
     exit_code, stdout, _ = _invoke_cli("validate-run", str(run_path))
 
     assert exit_code == 0
-    assert "valid" in stdout
+    assert "is valid" in stdout
 
 
 def test_validate_run_returns_non_zero_for_invalid_record(tmp_path: Path) -> None:
@@ -76,7 +76,19 @@ def test_validate_replay_returns_zero_for_valid_bundle(tmp_path: Path) -> None:
     exit_code, stdout, _ = _invoke_cli("validate-replay", str(replay_path))
 
     assert exit_code == 0
-    assert "valid" in stdout
+    assert "is valid" in stdout
+
+
+def test_validate_run_returns_zero_for_warning_only_report(tmp_path: Path) -> None:
+    run_path, _ = _build_run_and_replay_json(tmp_path)
+    payload = json.loads(run_path.read_text(encoding="utf-8"))
+    payload["final_output"] = None
+    run_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    exit_code, stdout, _ = _invoke_cli("validate-run", str(run_path))
+
+    assert exit_code == 0
+    assert "warnings" in stdout
 
 
 def test_sign_replay_writes_signed_bundle(tmp_path: Path) -> None:
@@ -141,3 +153,41 @@ def test_verify_signed_replay_fails_with_wrong_secret(tmp_path: Path) -> None:
 
     assert exit_code == 1
     assert "verification failed" in stderr
+
+
+def test_redact_run_writes_output(tmp_path: Path) -> None:
+    run_path, _ = _build_run_and_replay_json(tmp_path)
+    out_path = tmp_path / "redacted_run.json"
+
+    exit_code, stdout, _ = _invoke_cli(
+        "redact-run",
+        str(run_path),
+        "--out",
+        str(out_path),
+        "--targets",
+        "--final-output",
+    )
+
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert "Redacted run record written" in stdout
+    assert payload["actions"][0]["payload"] == {"redacted": True}
+    assert payload["actions"][0]["target"] == "[REDACTED]"
+
+
+def test_redact_replay_writes_output(tmp_path: Path) -> None:
+    _, replay_path = _build_run_and_replay_json(tmp_path)
+    out_path = tmp_path / "redacted_replay.json"
+
+    exit_code, stdout, _ = _invoke_cli(
+        "redact-replay",
+        str(replay_path),
+        "--out",
+        str(out_path),
+        "--reasons",
+    )
+
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert "Redacted replay bundle written" in stdout
+    assert payload["decisions"][0]["reason"] == "[REDACTED]"

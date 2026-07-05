@@ -21,6 +21,7 @@ from agent_control_plane.models import (
     BlockedAction,
     Frame,
     PolicyDecision,
+    PolicyEvaluationTrace,
     RelianceRecord,
     ReplayBundle,
     RunRecord,
@@ -69,6 +70,7 @@ class RunRecorder:
         self._frame: Optional[Frame] = None
         self._actions: list[ActionProposal] = []
         self._decisions: list[PolicyDecision] = []
+        self._policy_traces: list[PolicyEvaluationTrace] = []
         self._authority_records: list[AuthorityRecord] = []
         self._reliance_records: list[RelianceRecord] = []
         self._blocked_actions: list[BlockedAction] = []
@@ -185,7 +187,9 @@ class RunRecorder:
         return proposal
 
     def evaluate_action(
-        self, action: ActionProposal
+        self,
+        action: ActionProposal,
+        include_trace: bool = True,
     ) -> tuple[PolicyDecision, Optional[BlockedAction]]:
         """Run the action proposal through the policy gate.
 
@@ -206,7 +210,19 @@ class RunRecorder:
             raise ValueError("Action belongs to a different run.")
         if not any(proposed.action_id == action.action_id for proposed in self._actions):
             raise ValueError("Action was not proposed in this run.")
-        decision = self._gate.evaluate(action, self._frame, self._authority_records)  # type: ignore[arg-type]
+        if include_trace:
+            decision, trace = self._gate.evaluate_with_trace(  # type: ignore[arg-type]
+                action,
+                self._frame,
+                self._authority_records,
+            )
+            self._policy_traces.append(trace)
+        else:
+            decision = self._gate.evaluate(  # type: ignore[arg-type]
+                action,
+                self._frame,
+                self._authority_records,
+            )
         self._decisions.append(decision)
 
         blocked: Optional[BlockedAction] = None
@@ -221,6 +237,11 @@ class RunRecorder:
             self._blocked_actions.append(blocked)
 
         return decision, blocked
+
+    def get_policy_traces(self) -> list[PolicyEvaluationTrace]:
+        """Return a copy of the recorded policy traces."""
+
+        return list(self._policy_traces)
 
     def record_reliance(
         self,
@@ -278,6 +299,7 @@ class RunRecorder:
             frame=self._frame,  # type: ignore[arg-type]
             actions=list(self._actions),
             decisions=list(self._decisions),
+            policy_traces=list(self._policy_traces),
             authority_records=list(self._authority_records),
             reliance_records=list(self._reliance_records),
             blocked_actions=list(self._blocked_actions),

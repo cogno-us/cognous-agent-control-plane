@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/validation_report.schema.json",
+  "title": "ValidationReport",
+  "description": "Summary of validation results for a run record or replay bundle.",
+  "type": "object",
+  "required": ["valid", "checked_object_type", "checked_id", "issues"],
+  "properties": {
+    "valid": {
+      "type": "boolean",
+      "description": "Whether validation completed without errors."
+    },
+    "checked_object_type": {
+      "type": "string",
+      "enum": ["RunRecord", "ReplayBundle"],
+      "description": "Type of object that was validated."
+    },
+    "checked_id": {
+      "type": "string",
+      "description": "Identifier of the checked object."
+    },
+    "issues": {
+      "type": "array",
+      "description": "Validation issues discovered while checking the object.",
+      "items": {
+        "type": "object",
+        "required": ["severity", "code", "message"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning"],
+            "description": "Issue severity."
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable validation issue code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable validation message."
+          },
+          "path": {
+            "type": ["string", "null"],
+            "description": "Optional object path for the issue."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

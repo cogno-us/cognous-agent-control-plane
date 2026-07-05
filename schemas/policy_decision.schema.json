@@ -34,6 +34,10 @@
       "type": "string",
       "description": "Human-readable explanation of the decision."
     },
+    "trace_id": {
+      "type": ["string", "null"],
+      "description": "Optional identifier for the policy evaluation trace."
+    },
     "decided_at": {
       "type": "string",
       "format": "date-time",

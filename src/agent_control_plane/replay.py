@@ -33,6 +33,7 @@ def generate_replay_bundle(run_record: RunRecord) -> ReplayBundle:
         frame=run_record.frame,
         actions=list(run_record.actions),
         decisions=list(run_record.decisions),
+        policy_traces=list(run_record.policy_traces),
         authority_records=list(run_record.authority_records),
         reliance_records=list(run_record.reliance_records),
         blocked_actions=list(run_record.blocked_actions),
@@ -50,7 +51,7 @@ def to_json(bundle: ReplayBundle, *, indent: int = 2) -> str:
     Returns:
         A JSON string representation of the bundle.
     """
-    return json.dumps(bundle.model_dump(), indent=indent, ensure_ascii=False)
+    return json.dumps(bundle.model_dump(mode="json"), indent=indent, ensure_ascii=False)
 
 
 def from_json(data: str | bytes) -> ReplayBundle:
