@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_evaluation_trace.schema.json",
+  "title": "PolicyEvaluationTrace",
+  "description": "Ordered trace showing how the policy gate reached a final policy decision.",
+  "type": "object",
+  "required": [
+    "trace_id",
+    "run_id",
+    "action_id",
+    "evaluated_at",
+    "rules_evaluated",
+    "final_result",
+    "deterministic_fingerprint"
+  ],
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "description": "Unique identifier for this evaluation trace."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Run that this trace belongs to."
+    },
+    "action_id": {
+      "type": "string",
+      "description": "Action proposal evaluated by this trace."
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp when the action was evaluated."
+    },
+    "rules_evaluated": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_rule_evaluation.schema.json" },
+      "description": "Ordered policy rules evaluated for this action."
+    },
+    "final_result": {
+      "type": "string",
+      "enum": ["allow", "block", "escalate"],
+      "description": "Final policy result reached by the rule chain."
+    },
+    "deterministic_fingerprint": {
+      "type": "string",
+      "description": "Stable SHA-256 fingerprint matching the related policy decision."
+    }
+  },
+  "additionalProperties": false
+}

@@ -55,6 +55,7 @@ class TestReplayBundle:
         assert bundle.frame.frame_id == run_record.frame.frame_id
         assert len(bundle.actions) == len(run_record.actions)
         assert len(bundle.decisions) == len(run_record.decisions)
+        assert len(bundle.policy_traces) == len(run_record.policy_traces)
         assert len(bundle.authority_records) == len(run_record.authority_records)
         assert len(bundle.reliance_records) == len(run_record.reliance_records)
         assert len(bundle.blocked_actions) == len(run_record.blocked_actions)
@@ -78,6 +79,7 @@ class TestReplayBundle:
         assert restored.replay_bundle_id == bundle.replay_bundle_id
         assert restored.run_id == bundle.run_id
         assert len(restored.actions) == len(bundle.actions)
+        assert len(restored.policy_traces) == len(bundle.policy_traces)
         assert len(restored.blocked_actions) == len(bundle.blocked_actions)
         assert len(restored.reliance_records) == len(bundle.reliance_records)
         assert restored.final_output == bundle.final_output

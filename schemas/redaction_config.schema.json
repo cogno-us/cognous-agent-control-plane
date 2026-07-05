@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/redaction_config.schema.json",
+  "title": "RedactionConfig",
+  "description": "Configuration for privacy-safe redaction of exported objects.",
+  "type": "object",
+  "properties": {
+    "redact_payloads": {
+      "type": "boolean",
+      "default": true,
+      "description": "Replace action payloads with a redaction marker."
+    },
+    "redact_targets": {
+      "type": "boolean",
+      "default": false,
+      "description": "Replace action targets with the replacement text."
+    },
+    "redact_final_output": {
+      "type": "boolean",
+      "default": false,
+      "description": "Replace final output with the replacement text."
+    },
+    "redact_reasons": {
+      "type": "boolean",
+      "default": false,
+      "description": "Replace recorded reasons with the replacement text."
+    },
+    "replacement": {
+      "type": "string",
+      "default": "[REDACTED]",
+      "description": "Replacement text used for string fields when redacting."
+    }
+  },
+  "additionalProperties": false
+}

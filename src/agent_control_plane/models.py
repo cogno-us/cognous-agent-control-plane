@@ -93,6 +93,40 @@ class ActionProposal(BaseModel):
 # ---------------------------------------------------------------------------
 
 DecisionResult = Literal["allow", "block", "escalate"]
+TraceRuleResult = Literal["allow", "block", "escalate", "none"]
+
+
+class PolicyRuleEvaluation(BaseModel):
+    """Evaluation result for a single policy rule in the ordered rule chain."""
+
+    rule_name: str = Field(description="Name of the policy rule that was checked.")
+    matched: bool = Field(description="Whether this rule matched the action.")
+    result: TraceRuleResult = Field(
+        description="Rule outcome: allow, block, escalate, or none when it did not match."
+    )
+    reason: str = Field(description="Human-readable explanation for this rule outcome.")
+
+
+class PolicyEvaluationTrace(BaseModel):
+    """Ordered trace showing how a policy decision was reached."""
+
+    trace_id: str = Field(description="Unique identifier for this evaluation trace.")
+    run_id: str = Field(description="Run that this trace belongs to.")
+    action_id: str = Field(description="Action proposal evaluated by this trace.")
+    evaluated_at: str = Field(
+        default_factory=_now_iso,
+        description="ISO-8601 timestamp when the action was evaluated.",
+    )
+    rules_evaluated: list[PolicyRuleEvaluation] = Field(
+        default_factory=list,
+        description="Ordered policy rules evaluated for this action.",
+    )
+    final_result: DecisionResult = Field(
+        description="Final policy result reached by the rule chain."
+    )
+    deterministic_fingerprint: str = Field(
+        description="Stable SHA-256 fingerprint matching the related policy decision."
+    )
 
 
 class PolicyDecision(BaseModel):
@@ -123,6 +157,10 @@ class PolicyDecision(BaseModel):
             "Stable SHA-256 hex digest of the canonical decision inputs.  "
             "Identical inputs always produce the same result and fingerprint."
         )
+    )
+    trace_id: Optional[str] = Field(
+        default=None,
+        description="Optional reference to a policy evaluation trace for this decision.",
     )
 
 
@@ -240,6 +278,10 @@ class RunRecord(BaseModel):
         default_factory=list,
         description="All policy decisions made during the run.",
     )
+    policy_traces: list[PolicyEvaluationTrace] = Field(
+        default_factory=list,
+        description="Policy evaluation traces produced during the run.",
+    )
     authority_records: list[AuthorityRecord] = Field(
         default_factory=list,
         description="Authority records active during the run.",
@@ -294,6 +336,10 @@ class ReplayBundle(BaseModel):
         default_factory=list,
         description="All policy decisions from the run.",
     )
+    policy_traces: list[PolicyEvaluationTrace] = Field(
+        default_factory=list,
+        description="Policy evaluation traces from the run.",
+    )
     authority_records: list[AuthorityRecord] = Field(
         default_factory=list,
         description="Authority records active during the run.",
@@ -338,4 +384,77 @@ class SignedReplayBundle(BaseModel):
     signed_at: str = Field(
         default_factory=_now_iso,
         description="ISO-8601 timestamp when this bundle was signed.",
+    )
+
+
+class ValidationIssue(BaseModel):
+    """Semantic validation issue for a run record or replay bundle."""
+
+    severity: Literal["error", "warning"] = Field(
+        description="Issue severity level."
+    )
+    code: str = Field(description="Stable code identifying the validation rule.")
+    message: str = Field(description="Human-readable explanation of the issue.")
+    path: Optional[str] = Field(
+        default=None,
+        description="Optional dotted path to the invalid field or record.",
+    )
+
+
+class ValidationReport(BaseModel):
+    """Semantic validation report for exported objects."""
+
+    valid: bool = Field(
+        description="Whether the checked object has no error-severity issues."
+    )
+    checked_object_type: Literal["RunRecord", "ReplayBundle"] = Field(
+        description="Type of object that was validated."
+    )
+    checked_id: str = Field(description="Identifier of the validated object.")
+    issues: list[ValidationIssue] = Field(
+        default_factory=list,
+        description="Collected validation issues.",
+    )
+
+
+class RedactionConfig(BaseModel):
+    """Controls privacy-safe redaction for exported objects."""
+
+    redact_payloads: bool = Field(
+        default=True,
+        description="Replace action payloads with a redaction marker.",
+    )
+    redact_targets: bool = Field(
+        default=False,
+        description="Replace action targets with the replacement text.",
+    )
+    redact_final_output: bool = Field(
+        default=False,
+        description="Replace final output with the replacement text.",
+    )
+    redact_reasons: bool = Field(
+        default=False,
+        description="Replace recorded human-readable reasons with the replacement text.",
+    )
+    replacement: str = Field(
+        default="[REDACTED]",
+        description="Replacement text used for string fields when redacting.",
+    )
+
+
+class ToolExecutionResult(BaseModel):
+    """Result of attempting to execute an allowed action through a tool adapter."""
+
+    action_id: str = Field(description="Action proposal associated with this execution.")
+    run_id: str = Field(description="Run that this execution belongs to.")
+    executed: bool = Field(
+        description="Whether adapter execution was attempted for this action."
+    )
+    result: dict = Field(
+        default_factory=dict,
+        description="Tool adapter result payload.",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error message returned when execution was unavailable or failed.",
     )

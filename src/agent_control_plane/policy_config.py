@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
 from agent_control_plane.frame import create_frame
-from agent_control_plane.models import Frame
+from agent_control_plane.models import AuthorityRecord, Frame
 
 
 class PolicyConfig(BaseModel):
@@ -56,3 +57,26 @@ def frame_from_policy_config(
         blocked_tools=config.blocked_tools,
         policy_version=config.policy_version,
     )
+
+
+def authority_records_from_policy_config(
+    config: PolicyConfig,
+    *,
+    run_id: str,
+    actor: str,
+    source: str = "policy_config",
+    expires_at: str | None = None,
+) -> list[AuthorityRecord]:
+    """Create authority records from the authority requirements in a policy config."""
+
+    return [
+        AuthorityRecord(
+            authority_id=str(uuid.uuid4()),
+            run_id=run_id,
+            actor=actor,
+            scope=list(scopes),
+            source=source,
+            expires_at=expires_at,
+        )
+        for _action_type, scopes in config.authority_required.items()
+    ]

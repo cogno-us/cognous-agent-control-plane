@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/tool_execution_result.schema.json",
+  "title": "ToolExecutionResult",
+  "description": "Result of attempting to execute an allowed action through a tool adapter.",
+  "type": "object",
+  "required": ["action_id", "run_id", "executed", "result"],
+  "properties": {
+    "action_id": {
+      "type": "string",
+      "description": "Action proposal associated with this execution."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Run that this execution belongs to."
+    },
+    "executed": {
+      "type": "boolean",
+      "description": "Whether adapter execution was attempted for this action."
+    },
+    "result": {
+      "type": "object",
+      "description": "Tool adapter result payload."
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error message returned when execution was unavailable or failed."
+    }
+  },
+  "additionalProperties": false
+}

@@ -6,7 +6,7 @@
   "type": "object",
   "required": [
     "replay_bundle_id", "run_id", "generated_at", "frame",
-    "actions", "decisions", "authority_records",
+    "actions", "decisions", "policy_traces", "authority_records",
     "reliance_records", "blocked_actions"
   ],
   "properties": {
@@ -48,6 +48,11 @@
       "type": "array",
       "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_decision.schema.json" },
       "description": "All policy decisions from the run."
+    },
+    "policy_traces": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_evaluation_trace.schema.json" },
+      "description": "Policy evaluation traces from the run."
     },
     "authority_records": {
       "type": "array",

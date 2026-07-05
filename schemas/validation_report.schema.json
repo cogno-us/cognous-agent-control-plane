@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/validation_report.schema.json",
+  "title": "ValidationReport",
+  "description": "Semantic validation report for a run record or replay bundle.",
+  "type": "object",
+  "required": ["valid", "checked_object_type", "checked_id", "issues"],
+  "properties": {
+    "valid": {
+      "type": "boolean",
+      "description": "Whether the checked object has no error-severity issues."
+    },
+    "checked_object_type": {
+      "type": "string",
+      "enum": ["RunRecord", "ReplayBundle"],
+      "description": "Type of object that was validated."
+    },
+    "checked_id": {
+      "type": "string",
+      "description": "Identifier of the validated object."
+    },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/validation_issue.schema.json" },
+      "description": "Collected validation issues."
+    }
+  },
+  "additionalProperties": false
+}

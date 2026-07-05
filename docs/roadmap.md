@@ -19,9 +19,13 @@ This roadmap describes the planned phases for Agent Control Plane.
 ## MVP extensions *(current)*
 
 - Optional signed replay bundles using HMAC-SHA256.
+- Policy evaluation traces for ordered policy rule paths.
+- Semantic validation reports for run records and replay bundles.
+- Redacted exports for privacy-safe sharing.
+- Optional tool adapter execution after allow decisions.
 - JSON policy configuration example and demo helpers.
 - Dependency-light framework integration example with a mock adapter.
-- CLI validation and replay signing commands.
+- CLI validation, redaction, and replay signing commands.
 - Minimal persistence interface plus filesystem adapter.
 
 These extensions keep the project positioned as a compact runtime control and
@@ -34,7 +38,7 @@ production key-management solution.
 
 - More expressive policy configuration without turning into a full DSL.
 - Additional replay inspection and comparison utilities.
-- Optional viewer for inspecting run records and decisions.
+- Additional export helpers where they fit the minimal package scope.
 
 ---
 
@@ -49,9 +53,8 @@ production key-management solution.
 ## Phase 4 – Deeper action classification and context-change records
 
 - Richer action type taxonomy with semantic categories.
-- Context-change records capturing state transitions during a run.
-- Structured payload schemas per tool type.
-- Integration hooks for custom classifiers.
+- Structured payload conventions for selected adapter patterns.
+- Integration hooks for custom classifiers when they remain lightweight.
 
 ---
 

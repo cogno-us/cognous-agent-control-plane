@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/policy_rule_evaluation.schema.json",
+  "title": "PolicyRuleEvaluation",
+  "description": "Evaluation result for one policy rule in the ordered policy gate trace.",
+  "type": "object",
+  "required": ["rule_name", "matched", "result", "reason"],
+  "properties": {
+    "rule_name": {
+      "type": "string",
+      "description": "Name of the policy rule that was checked."
+    },
+    "matched": {
+      "type": "boolean",
+      "description": "Whether this rule matched the action."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["allow", "block", "escalate", "none"],
+      "description": "Rule outcome, or none when the rule did not match."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human-readable explanation for the rule outcome."
+    }
+  },
+  "additionalProperties": false
+}

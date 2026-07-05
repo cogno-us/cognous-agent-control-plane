@@ -9,17 +9,39 @@ replayable audit trace.
 
 ```
 Agent Task
-   ↓
+→ Frame
+→ Action Proposal
+→ Policy Gate
+→ Policy Decision + Evaluation Trace
+→ Allow / Block / Escalate
+→ Optional Tool Adapter Execution
+→ Run Record
+→ Validation Report
+→ Replay Bundle
+→ Optional Redacted or Signed Export
+```
+
+## Overview
+
+```
+Agent Task
+  ↓
 Frame
-   ↓
+  ↓
 Action Proposal
-   ↓
+  ↓
 Policy Gate
-   ↓
+  ↓
+Policy Decision + Evaluation Trace
+  ↓
 Allow / Block / Escalate
-   ↓
+  ↓
+Optional Tool Adapter Execution
+  ↓
 Run Record
-   ↓
+  ↓
+Validation Report
+  ↓
 Replay Bundle
 ```
 
@@ -40,15 +62,17 @@ lists for tools.  The Frame is immutable for the duration of the run.
 3. Records proposed actions via `propose_action()`.
 4. Evaluates each proposal via `evaluate_action()`, which delegates to
    the `PolicyGate`.
-5. Records external-source reliance via `record_reliance()`.
-6. Closes the run via `complete_run()`.
-7. Exports the `RunRecord` to JSON via `export_json()`.
-8. Generates a `ReplayBundle` via `generate_replay_bundle()`.
+5. Stores `PolicyEvaluationTrace` records for each decision by default.
+6. Records external-source reliance via `record_reliance()`.
+7. Closes the run via `complete_run()`.
+8. Exports the `RunRecord` to JSON via `export_json()`.
+9. Generates a `ReplayBundle` via `generate_replay_bundle()`.
 
 ### PolicyGate
 
 `PolicyGate.evaluate()` applies a deterministic rule chain to a single
-`ActionProposal`.  The rules are evaluated in order:
+`ActionProposal`. `evaluate_with_trace()` returns the same decision result plus
+an ordered `PolicyEvaluationTrace`. The rules are evaluated in order:
 
 1. Blocked tool → `block`
 2. Unknown tool (not in allow-list) → `escalate`
@@ -70,6 +94,7 @@ run.  It aggregates:
 - `Frame`
 - `list[ActionProposal]`
 - `list[PolicyDecision]`
+- `list[PolicyEvaluationTrace]`
 - `list[AuthorityRecord]`
 - `list[RelianceRecord]`
 - `list[BlockedAction]`
@@ -79,6 +104,18 @@ run.  It aggregates:
 A `ReplayBundle` is a self-contained export of a completed run.  It
 includes every record needed to reconstruct what happened, enabling
 offline audit, replay simulation, or compliance review.
+
+### Validation and redaction
+
+Semantic validation produces a `ValidationReport` for `RunRecord` and
+`ReplayBundle` exports. Redaction helpers create deep copies that preserve
+identifiers, policy decisions, and fingerprints while removing selected fields.
+
+### Tool adapter execution
+
+`execute_with_control()` is an optional adapter pattern that records an action,
+evaluates it through the policy gate, and only executes a caller-supplied
+adapter after an `"allow"` result.
 
 ### Optional utilities
 
@@ -103,10 +140,12 @@ propose_action()
     └─ appends ActionProposal
 
 evaluate_action(action)
-    ├─ PolicyGate.evaluate() → PolicyDecision
+    ├─ PolicyGate.evaluate_with_trace()
+    │       ├─ PolicyDecision
+    │       └─ PolicyEvaluationTrace
     │       └─ if result == "block"
     │              └─ creates BlockedAction
-    └─ appends PolicyDecision (and BlockedAction if blocked)
+    └─ appends PolicyDecision, PolicyEvaluationTrace, and BlockedAction if blocked
 
 record_reliance()
     └─ appends RelianceRecord
@@ -115,7 +154,9 @@ complete_run()
     └─ sets completed = True, final_output
 
 export_json()            → run_record.json
+validate_run_record()    → ValidationReport
 generate_replay_bundle() → ReplayBundle
+redact_replay_bundle()   → redacted ReplayBundle
 ```
 
 ## Design principles
@@ -129,5 +170,6 @@ generate_replay_bundle() → ReplayBundle
   dependencies.
 - **Minimal dependencies**: only the Python standard library and Pydantic
   are required.
-- **Additive utilities**: signing, validation, and persistence helpers stay
-  optional and do not turn the package into a full agent platform.
+- **Additive utilities**: signing, validation, redaction, tool adapter, and
+  persistence helpers stay optional and do not turn the package into a full
+  agent platform.

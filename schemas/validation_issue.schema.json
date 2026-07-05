@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/cogno-us/cognous-agent-control-plane/schemas/validation_issue.schema.json",
+  "title": "ValidationIssue",
+  "description": "A semantic validation issue produced when checking a run record or replay bundle.",
+  "type": "object",
+  "required": ["severity", "code", "message"],
+  "properties": {
+    "severity": {
+      "type": "string",
+      "enum": ["error", "warning"],
+      "description": "Issue severity level."
+    },
+    "code": {
+      "type": "string",
+      "description": "Stable code identifying the validation rule."
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable explanation of the issue."
+    },
+    "path": {
+      "type": ["string", "null"],
+      "description": "Optional dotted path to the invalid field or record."
+    }
+  },
+  "additionalProperties": false
+}
