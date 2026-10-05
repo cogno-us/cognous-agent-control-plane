@@ -43,7 +43,7 @@ The bounded workflow requires independently supplied resolvers for:
 5. Approval records bound to grant revision, proposal commitment and policy versions.
 6. Current policy versions/status and explicit authority-conflict status.
 7. Required evidence status and freshness.
-8. Explicit reviewer-role mapping where declaration labels differ from authority role IDs.
+8. Explicit reviewer-role mapping where declaration labels differ from authority role IDs. Mapping records are institution-scoped, versioned, canonicalized and bound into the runtime decision.
 
 SyntheticResolver is deterministic fixture infrastructure. Its authenticated
 attribute is false by design. Caller-supplied dictionaries are not promoted to
@@ -71,7 +71,7 @@ temporal fields, evidence references, correlation/run identifiers, risk metadata
 and expected side effects.
 
 Immediately before effect, the workflow resolves these inputs again and compares
-the complete binding. Changed payload, target, actor, adapter, manifest, grant
+the complete binding, including the requirement commitment and role-mapping version/digest. The supplied decision must exactly equal the persisted decision record, and its effect ID must equal the deterministic effect ID derived from the persisted binding. Changed payload, target, actor, adapter, manifest, grant
 revision/status, approval, policy or required evidence prevents effect.
 
 ## Scope, validity and consequence handling
@@ -82,7 +82,7 @@ implemented. Grant validity is exclusive at expires_at. Suspended, revoked,
 unknown, stale or revision-mismatched status holds the effect.
 
 The manifest consequence tier must equal the Authority Context requirement tier.
-Manifest review roles must resolve explicitly to Authority Context approval role IDs.
+Canonical authority role identifiers are institution-scoped URNs. Legacy Manifest short labels may resolve only through an explicit versioned alias table for the same institution. Unknown mappings, ambiguous aliases, mapping digest/version changes, and implicit string-prefix equivalence all hold the effect. Manifest review roles must resolve explicitly to Authority Context approval role IDs.
 Unmapped roles and unresolved, unknown, or stale authority conflicts hold the effect. Approval records must bind the exact proposal commitment and policy
 versions and satisfy actor-independence when requested.
 
@@ -139,6 +139,8 @@ share an atomic or reservation protocol. The local synthetic destination closes
 only its own deduplication and cumulative-count race with a process lock and
 atomic file replacement.
 
+The validated execution envelope supplies the destination with the persisted effect ID, grant ID, effective max_effects and frozen proposal fields. The workflow does not re-read Authority Context or grant data after revalidation.
+
 A production executor must declare:
 
 - idempotency/effect-key behavior;
@@ -163,3 +165,32 @@ Scheduling and fleet orchestration remain outside this package. A future fleet
 coordinator may supply bounded tasks/delegation and consume these decisions, but
 it must not bypass the manifest, authority resolver, decision binding or executor
 reconciliation interfaces.
+
+
+## Resolver response binding and freshness
+
+Resolver lookup arguments are not treated as proof that the returned record belongs to
+the requested object. The pilot checks returned identifiers and institutional context
+explicitly:
+
+- grant-status responses bind grant ID, revision, authority basis, institution and domain;
+- identity responses bind acting identity, principal, institution and domain;
+- mandate responses bind issuer, issuer role, institution and domain;
+- approval responses bind approval reference, role, grant/revision, operation commitment,
+  policy versions, institution and domain;
+- policy responses bind policy reference/version, institution and domain;
+- conflict responses bind requirement ID, institution and domain;
+- evidence responses bind obligation ID, declared source_ref, institution and domain.
+
+Grant, policy, conflict, identity, mandate and approval observations use explicit maximum
+ages. Required evidence uses its Authority Context max_age_seconds. All observed_at values
+are rejected when they exceed the configured future clock tolerance. Synthetic tests inject
+their evaluation time explicitly; production clock authority and uncertainty remain external
+dependencies.
+
+## Requirement versus grant scope
+
+Authorization requires the proposal to fit the Manifest declaration, the Authority Context
+requirement permission envelope, and the issued grant. A grant broader than the requirement
+does not widen the requirement. The execution envelope uses the narrowest represented
+max_effects value across Manifest, requirement and grant for the local pilot.
