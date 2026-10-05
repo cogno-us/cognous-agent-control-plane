@@ -19,9 +19,9 @@ Policy rules (evaluated in order)
 Fingerprint
 -----------
 A stable SHA-256 hex digest is computed from canonical JSON containing:
-``tool_name``, ``action_type``, ``target``, sorted ``allowed_tools``,
-sorted ``blocked_tools``, ``policy_version``, and sorted active authority
-scopes.  Identical inputs produce the same result and
+``tool_name``, ``action_type``, ``target``, canonical ``payload``, sorted
+``allowed_tools``, sorted ``blocked_tools``, ``policy_version``, and sorted
+active authority scopes.  Identical inputs produce the same result and
 ``deterministic_fingerprint``.  The ``decision_id`` and ``decided_at``
 fields are generated per evaluation.
 """
@@ -255,6 +255,7 @@ class PolicyGate:
             "tool_name": action.tool_name,
             "action_type": action.action_type,
             "target": action.target,
+            "payload": action.payload,
             "allowed_tools": sorted(frame.allowed_tools),
             "blocked_tools": sorted(frame.blocked_tools),
             "policy_version": frame.policy_version,
