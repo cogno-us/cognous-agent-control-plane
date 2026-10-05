@@ -1,0 +1,164 @@
+# Bounded authorization-to-effect contract
+
+Status: public synthetic pilot; not a production authority, identity, or payment system.
+
+## Supported upstream interfaces
+
+This implementation is pinned and tested against the following interface conventions:
+
+- Agent Action Manifest v1.1 at commit 46c950bed37fe3812000895430bc0312d29e37ce.
+  Manifest, payload, and proposal commitments use SHA-256 over sorted compact UTF-8
+  JSON with ensure_ascii=false and allow_nan=false, prefixed with sha256:.
+- Alvorada Authority Context 0.1.0 at commit
+  fb3d97938969a89e149e8ff8db2756091d1233fc. The serialized
+  interface_status value remains proposed_pending_governor_review.
+- BitRep v1 at commit 5b5077dafde232a7801cb425c4efddcffb468723.
+  A verification result establishes only the verification assertions defined by
+  that contract; it does not issue institutional authority.
+- The Index local blockchain reference at commit
+  d5e45d275cb301d9684b543e93b05997991d1cf2. Chain inclusion and wallet
+  attribution are evidence/provenance properties, not grants.
+
+The control plane does not duplicate BitRep verification or The Index consensus
+and does not introduce a central authority over The Index.
+
+## Runtime ownership
+
+The Manifest declares the proposed action envelope. The Control Plane resolves
+current inputs and makes a runtime decision. Institutions own mandates, grants,
+approval records and status sources. An execution adapter enforces the exact
+checked operation and exposes delivery/reconciliation behavior.
+
+A conforming manifest, valid signature, accepted verification-result JSON or
+blockchain inclusion is therefore insufficient by itself to execute an effect.
+
+## Resolver interface
+
+The bounded workflow requires independently supplied resolvers for:
+
+1. Authority Context and requirement/profile binding.
+2. Current grant ID, revision, status and authority basis.
+3. Acting identity, principal and delegation-chain validity.
+4. Issuer/role mandate.
+5. Approval records bound to grant revision, proposal commitment and policy versions.
+6. Current policy versions/status.
+7. Required evidence status and freshness.
+
+SyntheticResolver is deterministic fixture infrastructure. Its authenticated
+attribute is false by design. Caller-supplied dictionaries are not promoted to
+trusted institutional facts. A production profile still needs authenticated
+identity, mandate, approval, status, policy and evidence services, including
+key custody, source authentication, clock uncertainty and revocation propagation.
+
+## Decision binding
+
+AuthorizationBinding records proposal commitment and separates it from the
+legacy deterministic policy fingerprint. It binds:
+
+- manifest ID/version/digest;
+- actor/principal through Authority Context resolution;
+- declared action and requested permissions through proposal commitment;
+- adapter ID;
+- target;
+- canonical payload commitment;
+- Authority Context and requirement ID;
+- grant ID/revision;
+- applicable policy versions.
+
+The full RuntimeProposal commitment also covers amount, unit, effect count,
+temporal fields, evidence references, correlation/run identifiers, risk metadata
+and expected side effects.
+
+Immediately before effect, the workflow resolves these inputs again and compares
+the complete binding. Changed payload, target, actor, adapter, manifest, grant
+revision/status, approval, policy or required evidence prevents effect.
+
+## Scope, validity and consequence handling
+
+The pilot uses exact finite target and permission matching. No wildcard,
+hierarchical permission inference, fuzzy matching or unit conversion is
+implemented. Grant validity is exclusive at expires_at. Suspended, revoked,
+unknown, stale or revision-mismatched status holds the effect.
+
+The manifest consequence tier must equal the Authority Context requirement tier.
+Manifest review roles must be represented in the Authority Context approval
+requirements. Approval records must bind the exact proposal commitment and policy
+versions and satisfy actor-independence when requested.
+
+Required authorization evidence must be current and within the declared
+max_age_seconds. Optional unknown context with
+preserve_if_other_basis_suffices does not independently hold an otherwise valid
+pilot action.
+
+Delegated authority is accepted only when the identity/delegation resolver
+returns an authenticated valid chain and the child grant itself remains within
+the exact finite operation envelope. Production delegation must authenticate and
+evaluate every ancestor; the synthetic resolver does not perform cryptography.
+
+## Effect and recovery records
+
+The bounded record store keeps linked:
+
+- RuntimeDecision: authorized, hold or deny;
+- stable effect_id;
+- EffectAttempt with a new attempt_id for every execution/recovery attempt;
+- execution acknowledgement or unknown/failure/partial state;
+- independent destination EffectObservation;
+- ReconciliationResult.
+
+Authorized, attempted, acknowledged, observed and verified are not synonyms.
+This pilot never emits a verified effect state because no independent verifier
+is implemented.
+
+A lost acknowledgement is reconciled against destination state before another
+submission. An already applied effect is not re-applied. A partial effect is
+held. If a future adapter cannot expose durable effect identity or authoritative
+reconciliation, the safe behavior is to hold rather than claim exactly-once
+delivery.
+
+The durable JSON record and local destination are reopened in restart tests.
+
+## Limit semantics
+
+Manifest v1.1 max_amount and max_effects are first checked per proposal. That
+alone is not a cumulative budget guarantee.
+
+For this isolated local pilot only, LocalRefundDestination additionally enforces
+max_effects cumulatively per grant while holding a process-local lock. Concurrent
+threads sharing that destination cannot both consume a one-effect grant. This is
+not a distributed budget service and does not protect multiple processes or
+remote destinations. Production shared budgets require destination-side atomic
+reservation/commit or another reviewed consistency boundary.
+
+## TOCTOU and destination guarantees
+
+The workflow revalidates immediately before calling the destination, but there is
+still a check-to-commit race unless authority/policy state and destination commit
+share an atomic or reservation protocol. The local synthetic destination closes
+only its own deduplication and cumulative-count race with a process lock and
+atomic file replacement.
+
+A production executor must declare:
+
+- idempotency/effect-key behavior;
+- authoritative observation semantics;
+- partial-delivery representation;
+- commit or reservation guarantees;
+- credential scope and isolation;
+- revocation/status maximum age and clock uncertainty;
+- retry and reconciliation behavior.
+
+## Migration and compatibility
+
+Existing PolicyGate and execute_with_control APIs remain available. Their allow
+result is not retroactively converted into an institutional grant. The legacy
+fingerprint now includes payload content, and execute_with_control rejects a
+provided adapter whose name/action_type do not match the approved proposal.
+
+New integrations should use BoundedAuthorizationWorkflow for the pinned pilot
+contract. Existing recorded allows remain historical policy-gate results only.
+
+Scheduling and fleet orchestration remain outside this package. A future fleet
+coordinator may supply bounded tasks/delegation and consume these decisions, but
+it must not bypass the manifest, authority resolver, decision binding or executor
+reconciliation interfaces.
