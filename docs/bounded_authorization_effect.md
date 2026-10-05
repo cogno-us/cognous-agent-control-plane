@@ -41,8 +41,9 @@ The bounded workflow requires independently supplied resolvers for:
 3. Acting identity, principal and delegation-chain validity.
 4. Issuer/role mandate.
 5. Approval records bound to grant revision, proposal commitment and policy versions.
-6. Current policy versions/status.
+6. Current policy versions/status and explicit authority-conflict status.
 7. Required evidence status and freshness.
+8. Explicit reviewer-role mapping where declaration labels differ from authority role IDs.
 
 SyntheticResolver is deterministic fixture infrastructure. Its authenticated
 attribute is false by design. Caller-supplied dictionaries are not promoted to
@@ -81,8 +82,8 @@ implemented. Grant validity is exclusive at expires_at. Suspended, revoked,
 unknown, stale or revision-mismatched status holds the effect.
 
 The manifest consequence tier must equal the Authority Context requirement tier.
-Manifest review roles must be represented in the Authority Context approval
-requirements. Approval records must bind the exact proposal commitment and policy
+Manifest review roles must resolve explicitly to Authority Context approval role IDs.
+Unmapped roles and unresolved, unknown, or stale authority conflicts hold the effect. Approval records must bind the exact proposal commitment and policy
 versions and satisfy actor-independence when requested.
 
 Required authorization evidence must be current and within the declared
