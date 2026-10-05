@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -11,6 +13,7 @@ from agent_control_plane.bounded import (
     ApprovalStatus,
     BoundedAuthorizationWorkflow,
     BoundedRecordStore,
+    ConflictStatus,
     EvidenceStatus,
     GrantStatus,
     IdentityStatus,
@@ -33,94 +36,11 @@ POLICY_REF = "urn:cognous:policy:refund-policy"
 POLICY_VERSION = "1.0"
 
 
-def manifest():
-    return {
-        "manifest_version": "1.1",
-        "manifest_id": "refund-integration-pilot-v1",
-        "agent_name": "Synthetic Refund Agent",
-        "agent_description": "Synthetic bounded integration fixture.",
-        "owner": "cognous-integration-pilot",
-        "environment": "synthetic",
-        "default_action": "escalate",
-        "tools": [{
-            "tool_name": "refund_adapter",
-            "adapter_id": "urn:cognous:adapter:synthetic-refund-v1",
-            "allowed": True,
-        }],
-        "actions": [
-            {
-                "action_name": "refund_issue_routine",
-                "action_id": "urn:cognous:action:refund-issue-routine-v1",
-                "tool_name": "refund_adapter",
-                "action_type": "write",
-                "authority_required": [{"scope": "refund.issue.routine", "required": True}],
-                "review_requirement": {
-                    "mode": "human_review",
-                    "reviewer_role": "urn:cognous:role:customer-service-supervisor",
-                },
-                "reliance_requirement": {"required": True},
-                "payload_policy": {
-                    "required_fields": ["customer_id", "refund_reason"],
-                    "optional_fields": [],
-                    "forbidden_fields": [],
-                },
-                "target_policy": {
-                    "allowed_targets": ["urn:cognous:synthetic-account:customer-001"],
-                    "allow_any_target": False,
-                },
-                "effect_limits": {"max_amount": 100.0, "unit": "USD", "max_effects": 1},
-                "authority_context": {
-                    "schema_version": "0.1.0",
-                    "profile_ref": PROFILE,
-                    "requirement_id": "urn:cognous:authority-requirement:refund-routine-v1",
-                    "institution_id": INSTITUTION,
-                    "authority_domain": "customer-refunds",
-                    "consequence_tier": "T1",
-                    "evidence_obligation_ids": ["urn:cognous:evidence:refund-entitlement"],
-                },
-            },
-            {
-                "action_name": "refund_issue_high_consequence",
-                "action_id": "urn:cognous:action:refund-issue-high-v1",
-                "tool_name": "refund_adapter",
-                "action_type": "write",
-                "authority_required": [{"scope": "refund.issue.high", "required": True}],
-                "review_requirement": {
-                    "mode": "approval_required",
-                    "reviewer_role": "urn:cognous:role:refund-authorizer",
-                },
-                "reliance_requirement": {"required": True},
-                "payload_policy": {
-                    "required_fields": ["customer_id", "refund_reason", "case_reference"],
-                    "optional_fields": [],
-                    "forbidden_fields": [],
-                },
-                "target_policy": {
-                    "allowed_targets": ["urn:cognous:synthetic-account:customer-002"],
-                    "allow_any_target": False,
-                },
-                "effect_limits": {"max_amount": 1000.0, "unit": "USD", "max_effects": 1},
-                "authority_context": {
-                    "schema_version": "0.1.0",
-                    "profile_ref": PROFILE,
-                    "requirement_id": "urn:cognous:authority-requirement:refund-high-v1",
-                    "institution_id": INSTITUTION,
-                    "authority_domain": "customer-refunds",
-                    "consequence_tier": "T2",
-                    "evidence_obligation_ids": [
-                        "urn:cognous:evidence:refund-entitlement",
-                        "urn:cognous:evidence:refund-approval",
-                    ],
-                },
-            },
-        ],
-        "metadata": {
-            "upstream_alvorada_commit": "fb3d97938969a89e149e8ff8db2756091d1233fc",
-            "authority_context_version": "0.1.0",
-            "deployment_status": "not_deployed",
-        },
-    }
+FIXTURE = Path(__file__).parent / "fixtures" / "refund_integration_v1_1.manifest.json"
 
+
+def manifest():
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 def proposal(tier="T1", *, correlation_id="case-1"):
     m = manifest()
@@ -339,6 +259,17 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 observed_at=NOW.isoformat(),
             )
         },
+        conflicts={
+            p.requirement_id: ConflictStatus(
+                requirement_id=p.requirement_id,
+                state="clear",
+                observed_at=NOW.isoformat(),
+            )
+        },
+        role_aliases={
+            "customer-service-supervisor": "urn:cognous:role:customer-service-supervisor",
+            "refund-authorizer": "urn:cognous:role:refund-authorizer",
+        },
         evidence={
             "urn:cognous:evidence:refund-entitlement": EvidenceStatus(
                 obligation_id="urn:cognous:evidence:refund-entitlement",
@@ -480,6 +411,15 @@ def test_stale_required_evidence_holds_but_optional_unknown_does_not(tmp_path):
     r2 = resolver_for(p)
     decision2 = workflow(tmp_path / "b", p, resolver=r2).decide(p, now=NOW)
     assert decision2.result == "authorized"
+
+
+def test_unresolved_conflict_holds_effect(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    r.conflicts[p.requirement_id].state = "conflict"
+    decision = workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
+    assert decision.result == "hold"
+    assert "authority_conflict_unresolved" in decision.reasons
 
 
 def test_changed_policy_after_decision_prevents_effect(tmp_path):
