@@ -473,18 +473,24 @@ def test_stale_approval_identity_and_mandate_hold(tmp_path):
     r = resolver_for(p)
     approval_ref = r.contexts[PROFILE]["grant"]["approval_refs"][0]
     r.approvals[approval_ref].observed_at = (NOW - timedelta(days=365)).isoformat()
-    d = workflow(tmp_path / "approval", p, resolver=r).decide(p, now=NOW)
+    flow = workflow(tmp_path / "approval", p, resolver=r)
+    d = flow.decide(p, now=NOW)
     assert "approval_status_stale_or_future" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
 
     r = resolver_for(p)
     r.identities[ACTOR].observed_at = (NOW - timedelta(days=365)).isoformat()
-    d = workflow(tmp_path / "identity", p, resolver=r).decide(p, now=NOW)
+    flow = workflow(tmp_path / "identity", p, resolver=r)
+    d = flow.decide(p, now=NOW)
     assert "identity_status_stale_or_future" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
 
     r = resolver_for(p)
     r.mandates[f"{ISSUER}|{ISSUER_ROLE}"].observed_at = (NOW - timedelta(days=365)).isoformat()
-    d = workflow(tmp_path / "mandate", p, resolver=r).decide(p, now=NOW)
+    flow = workflow(tmp_path / "mandate", p, resolver=r)
+    d = flow.decide(p, now=NOW)
     assert "issuer_mandate_stale_or_future" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
 
 
 def test_resolver_record_identifier_binding_is_enforced(tmp_path):
@@ -492,8 +498,10 @@ def test_resolver_record_identifier_binding_is_enforced(tmp_path):
     r = resolver_for(p)
     grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
     r.statuses[grant_id].grant_id = "urn:wrong:grant"
-    d = workflow(tmp_path / "grant", p, resolver=r).decide(p, now=NOW)
+    flow = workflow(tmp_path / "grant", p, resolver=r)
+    d = flow.decide(p, now=NOW)
     assert "grant_status_binding_mismatch" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
 
     r = resolver_for(p)
     r.policies[POLICY_REF].ref = "urn:wrong:policy"
@@ -522,9 +530,11 @@ def test_future_resolver_timestamp_beyond_clock_tolerance_holds(tmp_path):
     r = resolver_for(p)
     grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
     r.statuses[grant_id].observed_at = (NOW + timedelta(seconds=6)).isoformat()
-    d = workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
+    flow = workflow(tmp_path, p, resolver=r)
+    d = flow.decide(p, now=NOW)
     assert d.result == "hold"
     assert "grant_status_stale_or_future" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
 
 
 def test_requirement_narrower_than_grant_holds(tmp_path):
