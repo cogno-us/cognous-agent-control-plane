@@ -110,3 +110,25 @@ def test_allowed_adapter_execution_creates_reliance_record() -> None:
     assert result is not None and result.executed is True
     assert len(run_record.reliance_records) == 1
     assert run_record.reliance_records[0].source_name == "crm_read"
+
+
+class WrongAdapter(RecordingAdapter):
+    name = "other_adapter"
+
+
+def test_adapter_identity_mismatch_is_not_executed() -> None:
+    recorder = _make_recorder()
+    adapter = WrongAdapter()
+    decision, result = execute_with_control(
+        recorder,
+        tool_name="crm_read",
+        action_type="read",
+        target="customer:1",
+        payload={"fields": ["name"]},
+        adapter=adapter,
+    )
+    assert decision.result == "allow"
+    assert result is not None
+    assert result.executed is False
+    assert "Adapter binding mismatch" in (result.error or "")
+    assert adapter.calls == []
