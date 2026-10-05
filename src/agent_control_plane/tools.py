@@ -54,8 +54,25 @@ def execute_with_control(
             ),
         )
 
+    if adapter.name != tool_name or adapter.action_type != action_type:
+        return (
+            decision,
+            ToolExecutionResult(
+                action_id=action.action_id,
+                run_id=action.run_id,
+                executed=False,
+                error=(
+                    "Adapter binding mismatch: approved "
+                    f"{tool_name}/{action_type}, got {adapter.name}/{adapter.action_type}."
+                ),
+            ),
+        )
+
+    frozen_payload = dict(payload or {})
+    frozen_target = str(target)
+
     try:
-        result = adapter.execute(target, payload or {})
+        result = adapter.execute(frozen_target, frozen_payload)
     except Exception as exc:
         return (
             decision,
