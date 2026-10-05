@@ -83,6 +83,7 @@ class GrantStatus(BaseModel):
     status: Literal["active", "suspended", "revoked", "unknown"]
     observed_at: str
     version: str
+    status_ref: str
     authority_basis_ref: str
     institution_id: str
     authority_domain: str
@@ -144,6 +145,7 @@ class IdentityStatus(BaseModel):
 class MandateStatus(BaseModel):
     issuer: str
     issuer_role: str
+    issuance_record_ref: str
     mandate_valid: bool
     observed_at: str
     institution_id: str
@@ -326,6 +328,7 @@ class SyntheticResolver:
         return value.model_copy(deep=True) if value else MandateStatus(
             issuer=issuer,
             issuer_role=issuer_role,
+            issuance_record_ref="urn:cognous:issuance:unknown",
             mandate_valid=False,
             observed_at=_iso(_now()),
             institution_id="urn:cognous:institution:unknown",
@@ -686,6 +689,7 @@ class BoundedAuthorizationWorkflow:
         if (
             mandate.issuer != grant["issuer"]
             or mandate.issuer_role != grant["issuer_role"]
+            or mandate.issuance_record_ref != grant["issuance_record_ref"]
             or not self._same_institution(mandate, context)
         ):
             reasons.append("issuer_mandate_binding_mismatch")
@@ -700,6 +704,7 @@ class BoundedAuthorizationWorkflow:
         else:
             if (
                 status.grant_id != grant["grant_id"]
+                or status.status_ref != grant["status_ref"]
                 or status.authority_basis_ref != institution.get("authority_basis_ref")
                 or not self._same_institution(status, context)
             ):
@@ -734,7 +739,11 @@ class BoundedAuthorizationWorkflow:
         if conflict is None:
             reasons.append("authority_conflict_unresolved")
         else:
-            if conflict.requirement_id != requirement["requirement_id"] or not self._same_institution(conflict, context):
+            if (
+                conflict.requirement_id != requirement["requirement_id"]
+                or sorted(conflict.conflict_refs) != sorted(context.get("conflicts", {}).get("precedence_refs", []))
+                or not self._same_institution(conflict, context)
+            ):
                 reasons.append("conflict_status_binding_mismatch")
             if conflict.state != "clear":
                 reasons.append("authority_conflict_unresolved")
