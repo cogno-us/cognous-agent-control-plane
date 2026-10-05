@@ -14,6 +14,7 @@ from agent_control_plane.bounded import (
     MandateStatus,
     PolicyStatus,
     ReconciliationResult,
+    RoleMappingStatus,
     Resolver,
     RuntimeDecision,
     RuntimeProposal,
@@ -61,6 +62,7 @@ from agent_control_plane.tools import ToolAdapter, execute_with_control
 from agent_control_plane.validation import validate_replay_bundle, validate_run_record
 
 __all__ = [
+    "RoleMappingStatus",
     "commitment",
     "SyntheticResolver",
     "RuntimeProposal",
