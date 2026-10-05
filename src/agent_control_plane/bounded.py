@@ -113,6 +113,13 @@ class PolicyStatus(BaseModel):
     observed_at: str
 
 
+class ConflictStatus(BaseModel):
+    requirement_id: str
+    state: Literal["clear", "conflict", "unknown"]
+    observed_at: str
+    conflict_refs: list[str] = Field(default_factory=list)
+
+
 class IdentityStatus(BaseModel):
     identity: str
     principal: str
@@ -137,7 +144,9 @@ class Resolver(Protocol):
     def issuer_mandate(self, issuer: str, issuer_role: str) -> MandateStatus: ...
     def approval_status(self, approval_ref: str) -> ApprovalStatus | None: ...
     def policy_status(self, ref: str) -> PolicyStatus | None: ...
+    def conflict_status(self, requirement_id: str) -> ConflictStatus | None: ...
     def evidence_status(self, obligation_id: str) -> EvidenceStatus | None: ...
+    def role_matches(self, declared_role: str, resolved_role_id: str) -> bool: ...
 
 
 class AuthorizationBinding(BaseModel):
@@ -145,14 +154,23 @@ class AuthorizationBinding(BaseModel):
     manifest_id: str
     manifest_version: str
     manifest_digest: str
+    actor: str
+    principal: str
+    action_id: str
+    adapter_id: str
+    target: str
+    payload_commitment: str
+    requested_permissions: list[str]
+    amount: float
+    unit: str
+    effects: int
     authority_context_id: str
+    authority_context_version: str
+    authority_context_status: str
     requirement_id: str
     grant_id: str
     grant_revision: str
     policy_versions: list[dict]
-    adapter_id: str
-    target: str
-    payload_commitment: str
 
 
 class RuntimeDecision(BaseModel):
@@ -240,14 +258,17 @@ class SyntheticResolver:
 
     authenticated = False
 
-    def __init__(self, *, contexts, statuses, identities, mandates, approvals, policies, evidence):
+    def __init__(self, *, contexts, statuses, identities, mandates, approvals, policies,
+                 conflicts, evidence, role_aliases=None):
         self.contexts = contexts
         self.statuses = statuses
         self.identities = identities
         self.mandates = mandates
         self.approvals = approvals
         self.policies = policies
+        self.conflicts = conflicts
         self.evidence = evidence
+        self.role_aliases = role_aliases or {}
 
     def authority_context(self, ref: str) -> dict | None:
         return copy.deepcopy(self.contexts.get(ref))
@@ -277,9 +298,17 @@ class SyntheticResolver:
         value = self.policies.get(ref)
         return value.model_copy(deep=True) if value else None
 
+    def conflict_status(self, requirement_id: str) -> ConflictStatus | None:
+        value = self.conflicts.get(requirement_id)
+        return value.model_copy(deep=True) if value else None
+
     def evidence_status(self, obligation_id: str) -> EvidenceStatus | None:
         value = self.evidence.get(obligation_id)
         return value.model_copy(deep=True) if value else None
+
+    def role_matches(self, declared_role: str, resolved_role_id: str) -> bool:
+        mapped = self.role_aliases.get(declared_role, declared_role)
+        return mapped == resolved_role_id
 
 
 class LocalRefundDestination:
@@ -468,7 +497,11 @@ class BoundedAuthorizationWorkflow:
         if review.get("mode") in {"human_review", "approval_required"}:
             declared_role = review.get("reviewer_role")
             required_roles = {x.get("role_id") for x in context.get("requirement", {}).get("approvals", [])}
-            if declared_role not in required_roles:
+            if declared_role is None or not any(
+                self.resolver.role_matches(declared_role, role_id)
+                for role_id in required_roles
+                if role_id is not None
+            ):
                 reasons.append("review_requirement_not_resolved")
         grant = context.get("grant")
         if not grant:
@@ -503,6 +536,12 @@ class BoundedAuthorizationWorkflow:
         delegation = grant.get("delegation", {})
         if delegation.get("parent_grant_id") is not None and not identity.chain:
             reasons.append("delegation_chain_missing")
+
+        conflict = self.resolver.conflict_status(context["requirement"]["requirement_id"])
+        if conflict is None or conflict.state != "clear":
+            reasons.append("authority_conflict_unresolved")
+        elif (now - _parse(conflict.observed_at)).total_seconds() > self.status_max_age_seconds:
+            reasons.append("conflict_status_stale")
 
         policy_versions = grant.get("policy_versions", [])
         for item in policy_versions:
@@ -548,12 +587,26 @@ class BoundedAuthorizationWorkflow:
             return sorted(set(reasons)), None
         return [], AuthorizationBinding(
             proposal_commitment=proposal_commitment,
-            manifest_id=proposal.manifest_id, manifest_version=proposal.manifest_version,
-            manifest_digest=proposal.manifest_digest, authority_context_id=context["context_id"],
-            requirement_id=proposal.requirement_id or "", grant_id=grant["grant_id"],
-            grant_revision=grant["revision"], policy_versions=copy.deepcopy(policy_versions),
-            adapter_id=proposal.adapter_id, target=proposal.target,
-            payload_commitment=proposal.payload_commitment
+            manifest_id=proposal.manifest_id,
+            manifest_version=proposal.manifest_version,
+            manifest_digest=proposal.manifest_digest,
+            actor=proposal.actor,
+            principal=proposal.principal,
+            action_id=proposal.action_id,
+            adapter_id=proposal.adapter_id,
+            target=proposal.target,
+            payload_commitment=proposal.payload_commitment,
+            requested_permissions=copy.deepcopy(proposal.requested_permissions),
+            amount=proposal.amount,
+            unit=proposal.unit,
+            effects=proposal.effects,
+            authority_context_id=context["context_id"],
+            authority_context_version=context["schema_version"],
+            authority_context_status=context["interface_status"],
+            requirement_id=proposal.requirement_id or "",
+            grant_id=grant["grant_id"],
+            grant_revision=grant["revision"],
+            policy_versions=copy.deepcopy(policy_versions),
         )
 
     def _manifest_mismatches(self, proposal: RuntimeProposal, now: datetime) -> list[str]:
