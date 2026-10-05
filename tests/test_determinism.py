@@ -87,6 +87,16 @@ class TestDeterminism:
         ).deterministic_fingerprint
         assert fp_read != fp_write
 
+    def test_fingerprint_changes_with_payload(self) -> None:
+        """Payload content is decision-critical in the legacy fingerprint."""
+        gate = PolicyGate()
+        frame = _make_frame()
+        a = _make_action().model_copy(update={"payload": {"customer_id": "1"}})
+        b = _make_action().model_copy(update={"payload": {"customer_id": "2"}})
+        fp_a = gate.evaluate(a, frame, [], now="2026-01-01T00:00:00+00:00").deterministic_fingerprint
+        fp_b = gate.evaluate(b, frame, [], now="2026-01-01T00:00:00+00:00").deterministic_fingerprint
+        assert fp_a != fp_b
+
     def test_fingerprint_stable_across_authority_insertion_order(self) -> None:
         """Fingerprint must not change when active authority record order changes."""
         gate = PolicyGate()
