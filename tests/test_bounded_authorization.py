@@ -390,10 +390,14 @@ def test_delegation_cannot_widen_or_survive_invalid_parent(tmp_path):
     decision = workflow(tmp_path / "a", p, resolver=r).decide(p, now=NOW)
     assert "identity_or_delegation_invalid" in decision.reasons
 
-    p2 = proposal()
+    base = proposal()
+    r2 = resolver_for(base, delegated=True)
+    p2 = base.model_copy(deep=True)
     p2.requested_permissions.append("refund.issue.admin")
-    p2.payload_commitment = commitment(p2.payload)
-    r2 = resolver_for(p2, delegated=True)
+    approval_ref = r2.contexts[PROFILE]["grant"]["approval_refs"][0]
+    r2.approvals[approval_ref].proposal_commitment = commitment(
+        p2.model_dump(mode="json", exclude_none=False)
+    )
     decision2 = workflow(tmp_path / "b", p2, resolver=r2).decide(p2, now=NOW)
     assert decision2.result == "hold"
     assert "grant_scope_mismatch" in decision2.reasons
