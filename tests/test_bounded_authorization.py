@@ -216,6 +216,7 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
             status="active",
             observed_at=NOW.isoformat(),
             version="status-v1",
+            status_ref=grant["status_ref"],
             authority_basis_ref="urn:cognous:authority-basis:synthetic",
             institution_id=INSTITUTION,
             authority_domain="customer-refunds",
@@ -267,6 +268,7 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
             f"{ISSUER}|{ISSUER_ROLE}": MandateStatus(
                 issuer=ISSUER,
                 issuer_role=ISSUER_ROLE,
+                issuance_record_ref=ctx["grant"]["issuance_record_ref"] if with_grant else "urn:cognous:issuance:none",
                 mandate_valid=True,
                 observed_at=NOW.isoformat(),
                 institution_id=INSTITUTION,
@@ -289,6 +291,7 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 requirement_id=p.requirement_id,
                 state="clear",
                 observed_at=NOW.isoformat(),
+                conflict_refs=copy.deepcopy(ctx["conflicts"]["precedence_refs"]),
                 institution_id=INSTITUTION,
                 authority_domain="customer-refunds",
             )
@@ -502,6 +505,22 @@ def test_resolver_record_identifier_binding_is_enforced(tmp_path):
     d = flow.decide(p, now=NOW)
     assert "grant_status_binding_mismatch" in d.reasons
     assert flow.destination.snapshot()["effects"] == {}
+
+    r = resolver_for(p)
+    grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
+    r.statuses[grant_id].status_ref = "urn:wrong:status"
+    d = workflow(tmp_path / "status-ref", p, resolver=r).decide(p, now=NOW)
+    assert "grant_status_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    r.mandates[f"{ISSUER}|{ISSUER_ROLE}"].issuance_record_ref = "urn:wrong:issuance"
+    d = workflow(tmp_path / "mandate-ref", p, resolver=r).decide(p, now=NOW)
+    assert "issuer_mandate_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    r.conflicts[p.requirement_id].conflict_refs = ["urn:wrong:precedence"]
+    d = workflow(tmp_path / "conflict-ref", p, resolver=r).decide(p, now=NOW)
+    assert "conflict_status_binding_mismatch" in d.reasons
 
     r = resolver_for(p)
     r.policies[POLICY_REF].ref = "urn:wrong:policy"
