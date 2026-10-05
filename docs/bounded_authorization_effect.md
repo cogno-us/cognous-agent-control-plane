@@ -173,13 +173,13 @@ Resolver lookup arguments are not treated as proof that the returned record belo
 the requested object. The pilot checks returned identifiers and institutional context
 explicitly:
 
-- grant-status responses bind grant ID, revision, authority basis, institution and domain;
+- grant-status responses bind grant ID, revision, status_ref, authority basis, institution and domain;
 - identity responses bind acting identity, principal, institution and domain;
-- mandate responses bind issuer, issuer role, institution and domain;
+- mandate responses bind issuer, issuer role, issuance_record_ref, institution and domain;
 - approval responses bind approval reference, role, grant/revision, operation commitment,
   policy versions, institution and domain;
 - policy responses bind policy reference/version, institution and domain;
-- conflict responses bind requirement ID, institution and domain;
+- conflict responses bind requirement ID, declared precedence references, institution and domain;
 - evidence responses bind obligation ID, declared source_ref, institution and domain.
 
 Grant, policy, conflict, identity, mandate and approval observations use explicit maximum
