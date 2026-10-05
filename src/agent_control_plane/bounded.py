@@ -1,0 +1,609 @@
+"""Bounded authorization-to-effect workflow for the synthetic pilot."""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import threading
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal, Protocol
+
+from pydantic import BaseModel, Field
+
+MANIFEST_VERSION = "1.1"
+AUTHORITY_CONTEXT_VERSION = "0.1.0"
+AUTHORITY_CONTEXT_STATUS = "proposed_pending_governor_review"
+MANIFEST_UPSTREAM_COMMIT = "46c950bed37fe3812000895430bc0312d29e37ce"
+ALVORADA_UPSTREAM_COMMIT = "fb3d97938969a89e149e8ff8db2756091d1233fc"
+BITREP_UPSTREAM_COMMIT = "5b5077dafde232a7801cb425c4efddcffb468723"
+INDEX_UPSTREAM_COMMIT = "d5e45d275cb301d9684b543e93b05997991d1cf2"
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _parse(value: str) -> datetime:
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _canonical_bytes(value: object) -> bytes:
+    """Manifest v1.1 canonical bytes, byte-compatible with the pinned helper."""
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def commitment(value: object) -> str:
+    """Return the Manifest v1.1-compatible SHA-256 commitment."""
+    return "sha256:" + hashlib.sha256(_canonical_bytes(value)).hexdigest()
+
+
+class RuntimeProposal(BaseModel):
+    manifest_id: str
+    manifest_version: str
+    manifest_digest: str
+    actor: str
+    principal: str
+    action_id: str
+    adapter_id: str
+    target: str
+    payload: dict
+    payload_commitment: str
+    requested_permissions: list[str] = Field(default_factory=list)
+    amount: float = Field(default=0, ge=0)
+    unit: str = ""
+    effects: int = Field(default=1, ge=0)
+    authority_context_ref: str | None = None
+    requirement_id: str | None = None
+    risk_metadata: dict = Field(default_factory=dict)
+    not_before: str | None = None
+    expires_at: str | None = None
+    correlation_id: str | None = None
+    run_id: str | None = None
+    expected_side_effects: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class GrantStatus(BaseModel):
+    grant_id: str
+    revision: str
+    status: Literal["active", "suspended", "revoked", "unknown"]
+    observed_at: str
+    version: str
+    authority_basis_ref: str
+    superseded_by: str | None = None
+
+
+class ApprovalStatus(BaseModel):
+    approval_ref: str
+    role_id: str
+    approver: str
+    grant_id: str
+    grant_revision: str
+    proposal_commitment: str
+    policy_versions: list[dict]
+    status: Literal["active", "revoked", "unknown"] = "active"
+    observed_at: str
+
+
+class EvidenceStatus(BaseModel):
+    obligation_id: str
+    state: Literal["current", "stale", "unknown"]
+    observed_at: str
+    source_ref: str
+
+
+class PolicyStatus(BaseModel):
+    ref: str
+    version: str
+    status: Literal["active", "superseded", "unknown"]
+    observed_at: str
+
+
+class IdentityStatus(BaseModel):
+    identity: str
+    principal: str
+    authenticated: bool
+    delegation_valid: bool
+    observed_at: str
+    chain: list[str] = Field(default_factory=list)
+
+
+class MandateStatus(BaseModel):
+    issuer: str
+    issuer_role: str
+    mandate_valid: bool
+    observed_at: str
+
+
+class Resolver(Protocol):
+    authenticated: bool
+    def authority_context(self, ref: str) -> dict | None: ...
+    def grant_status(self, grant_id: str) -> GrantStatus | None: ...
+    def identity_status(self, acting_identity: str, principal: str) -> IdentityStatus: ...
+    def issuer_mandate(self, issuer: str, issuer_role: str) -> MandateStatus: ...
+    def approval_status(self, approval_ref: str) -> ApprovalStatus | None: ...
+    def policy_status(self, ref: str) -> PolicyStatus | None: ...
+    def evidence_status(self, obligation_id: str) -> EvidenceStatus | None: ...
+
+
+class AuthorizationBinding(BaseModel):
+    proposal_commitment: str
+    manifest_id: str
+    manifest_version: str
+    manifest_digest: str
+    authority_context_id: str
+    requirement_id: str
+    grant_id: str
+    grant_revision: str
+    policy_versions: list[dict]
+    adapter_id: str
+    target: str
+    payload_commitment: str
+
+
+class RuntimeDecision(BaseModel):
+    decision_id: str
+    effect_id: str
+    result: Literal["authorized", "hold", "deny"]
+    reasons: list[str]
+    decided_at: str
+    binding: AuthorizationBinding | None = None
+
+
+class EffectAttempt(BaseModel):
+    attempt_id: str
+    effect_id: str
+    decision_id: str
+    started_at: str
+    status: Literal["attempted", "acknowledged", "unknown", "failed", "partial"]
+    acknowledgement: dict = Field(default_factory=dict)
+    error: str | None = None
+
+
+class EffectObservation(BaseModel):
+    effect_id: str
+    observed_at: str
+    state: Literal["absent", "applied", "partial", "unknown"]
+    destination_state: dict = Field(default_factory=dict)
+
+
+class ReconciliationResult(BaseModel):
+    effect_id: str
+    reconciled_at: str
+    result: Literal["applied", "safe_to_retry", "hold"]
+    observation: EffectObservation
+
+
+class BoundedRunRecord(BaseModel):
+    run_id: str
+    decisions: list[RuntimeDecision] = Field(default_factory=list)
+    attempts: list[EffectAttempt] = Field(default_factory=list)
+    observations: list[EffectObservation] = Field(default_factory=list)
+    reconciliations: list[ReconciliationResult] = Field(default_factory=list)
+
+
+class BoundedRecordStore:
+    """Durable JSON event store used only by the bounded synthetic pilot."""
+
+    def __init__(self, path: str | Path, run_id: str):
+        self.path = Path(path)
+        self.run_id = run_id
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        if not self.path.exists():
+            self._write(BoundedRunRecord(run_id=run_id))
+
+    def load(self) -> BoundedRunRecord:
+        with self._lock:
+            return BoundedRunRecord.model_validate_json(self.path.read_text(encoding="utf-8"))
+
+    def append_decision(self, value: RuntimeDecision) -> None:
+        self._append("decisions", value)
+
+    def append_attempt(self, value: EffectAttempt) -> None:
+        self._append("attempts", value)
+
+    def append_observation(self, value: EffectObservation) -> None:
+        self._append("observations", value)
+
+    def append_reconciliation(self, value: ReconciliationResult) -> None:
+        self._append("reconciliations", value)
+
+    def _append(self, field: str, value: BaseModel) -> None:
+        with self._lock:
+            record = self.load()
+            getattr(record, field).append(value)
+            self._write(record)
+
+    def _write(self, record: BoundedRunRecord) -> None:
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp.write_text(record.model_dump_json(indent=2), encoding="utf-8")
+        os.replace(tmp, self.path)
+
+
+class SyntheticResolver:
+    """Deterministic synthetic resolver; not institutionally authenticated."""
+
+    authenticated = False
+
+    def __init__(self, *, contexts, statuses, identities, mandates, approvals, policies, evidence):
+        self.contexts = contexts
+        self.statuses = statuses
+        self.identities = identities
+        self.mandates = mandates
+        self.approvals = approvals
+        self.policies = policies
+        self.evidence = evidence
+
+    def authority_context(self, ref: str) -> dict | None:
+        return copy.deepcopy(self.contexts.get(ref))
+
+    def grant_status(self, grant_id: str) -> GrantStatus | None:
+        value = self.statuses.get(grant_id)
+        return value.model_copy(deep=True) if value else None
+
+    def identity_status(self, acting_identity: str, principal: str) -> IdentityStatus:
+        value = self.identities.get(acting_identity)
+        return value.model_copy(deep=True) if value else IdentityStatus(
+            identity=acting_identity, principal=principal, authenticated=False,
+            delegation_valid=False, observed_at=_iso(_now())
+        )
+
+    def issuer_mandate(self, issuer: str, issuer_role: str) -> MandateStatus:
+        value = self.mandates.get(f"{issuer}|{issuer_role}")
+        return value.model_copy(deep=True) if value else MandateStatus(
+            issuer=issuer, issuer_role=issuer_role, mandate_valid=False, observed_at=_iso(_now())
+        )
+
+    def approval_status(self, approval_ref: str) -> ApprovalStatus | None:
+        value = self.approvals.get(approval_ref)
+        return value.model_copy(deep=True) if value else None
+
+    def policy_status(self, ref: str) -> PolicyStatus | None:
+        value = self.policies.get(ref)
+        return value.model_copy(deep=True) if value else None
+
+    def evidence_status(self, obligation_id: str) -> EvidenceStatus | None:
+        value = self.evidence.get(obligation_id)
+        return value.model_copy(deep=True) if value else None
+
+
+class LocalRefundDestination:
+    """Durable synthetic destination with effect dedupe and local cumulative cap."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+        if not self.path.exists():
+            self._write({"effects": {}, "grant_effect_counts": {}})
+
+    def apply(self, *, effect_id: str, grant_id: str, max_effects: int, target: str,
+              amount: float, unit: str, payload: dict, lose_ack: bool = False,
+              partial: bool = False) -> dict:
+        with self._lock:
+            state = self._load()
+            if effect_id in state["effects"]:
+                return {"duplicate": True, "effect": copy.deepcopy(state["effects"][effect_id])}
+            used = int(state["grant_effect_counts"].get(grant_id, 0))
+            if used >= max_effects:
+                raise RuntimeError("cumulative grant max_effects exhausted")
+            effect = {
+                "effect_id": effect_id, "grant_id": grant_id, "target": target,
+                "amount": amount, "unit": unit, "payload": copy.deepcopy(payload),
+                "state": "partial" if partial else "applied",
+            }
+            state["effects"][effect_id] = effect
+            state["grant_effect_counts"][grant_id] = used + 1
+            self._write(state)
+            if lose_ack:
+                raise TimeoutError("synthetic acknowledgement lost after commit")
+            return {"duplicate": False, "effect": copy.deepcopy(effect)}
+
+    def observe(self, effect_id: str) -> EffectObservation:
+        with self._lock:
+            effect = self._load()["effects"].get(effect_id)
+            if effect is None:
+                return EffectObservation(effect_id=effect_id, observed_at=_iso(_now()), state="absent")
+            state = "partial" if effect["state"] == "partial" else "applied"
+            return EffectObservation(
+                effect_id=effect_id, observed_at=_iso(_now()), state=state,
+                destination_state=copy.deepcopy(effect)
+            )
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            return copy.deepcopy(self._load())
+
+    def _load(self) -> dict:
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def _write(self, state: dict) -> None:
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, self.path)
+
+
+class BoundedAuthorizationWorkflow:
+    """Resolve, decide, revalidate and execute one finite declared operation."""
+
+    def __init__(self, *, manifest: dict, resolver: Resolver,
+                 destination: LocalRefundDestination, records: BoundedRecordStore):
+        self.manifest = copy.deepcopy(manifest)
+        self.resolver = resolver
+        self.destination = destination
+        self.records = records
+
+    def decide(self, proposal: RuntimeProposal, *, now: datetime | None = None) -> RuntimeDecision:
+        now = now or _now()
+        frozen = proposal.model_copy(deep=True)
+        reasons, binding = self._resolve(frozen, now)
+        effect_id = commitment({
+            "proposal": commitment(frozen.model_dump(mode="json", exclude_none=False)),
+            "grant_id": binding.grant_id if binding else None,
+            "grant_revision": binding.grant_revision if binding else None,
+        })
+        decision = RuntimeDecision(
+            decision_id=str(uuid.uuid4()), effect_id=effect_id,
+            result="authorized" if not reasons else "hold", reasons=reasons,
+            decided_at=_iso(now), binding=binding if not reasons else None
+        )
+        self.records.append_decision(decision)
+        return decision
+
+    def execute(self, proposal: RuntimeProposal, decision: RuntimeDecision, *,
+                adapter_id: str, now: datetime | None = None,
+                lose_ack: bool = False, partial: bool = False) -> tuple[EffectAttempt, EffectObservation]:
+        now = now or _now()
+        if decision.result != "authorized" or decision.binding is None:
+            raise PermissionError("decision is not authorized")
+        frozen = proposal.model_copy(deep=True)
+        reasons, current = self._resolve(frozen, now)
+        if reasons or current is None or current != decision.binding:
+            raise PermissionError("authorization-critical inputs changed before effect")
+        if adapter_id != current.adapter_id:
+            raise PermissionError("adapter substitution detected")
+
+        existing = self.destination.observe(decision.effect_id)
+        if existing.state in {"applied", "partial"}:
+            rec = ReconciliationResult(
+                effect_id=decision.effect_id, reconciled_at=_iso(now),
+                result="applied" if existing.state == "applied" else "hold",
+                observation=existing
+            )
+            self.records.append_observation(existing)
+            self.records.append_reconciliation(rec)
+            attempt = EffectAttempt(
+                attempt_id=str(uuid.uuid4()), effect_id=decision.effect_id,
+                decision_id=decision.decision_id, started_at=_iso(now),
+                status="acknowledged" if existing.state == "applied" else "partial",
+                acknowledgement={"reconciled_existing": True}
+            )
+            self.records.append_attempt(attempt)
+            return attempt, existing
+
+        context = self.resolver.authority_context(proposal.authority_context_ref or "")
+        if context is None or "grant" not in context:
+            raise PermissionError("current grant unavailable")
+        grant = context["grant"]
+        permission = self._matching_permission(grant, proposal)
+        if permission is None:
+            raise PermissionError("grant scope unavailable")
+        attempt = EffectAttempt(
+            attempt_id=str(uuid.uuid4()), effect_id=decision.effect_id,
+            decision_id=decision.decision_id, started_at=_iso(now), status="attempted"
+        )
+        self.records.append_attempt(attempt)
+        try:
+            ack = self.destination.apply(
+                effect_id=decision.effect_id, grant_id=grant["grant_id"],
+                max_effects=int(permission["max_effects"]), target=frozen.target,
+                amount=frozen.amount, unit=frozen.unit, payload=frozen.payload,
+                lose_ack=lose_ack, partial=partial
+            )
+            attempt.status = "partial" if partial else "acknowledged"
+            attempt.acknowledgement = ack
+        except TimeoutError as exc:
+            attempt.status = "unknown"
+            attempt.error = str(exc)
+        except Exception as exc:
+            attempt.status = "failed"
+            attempt.error = str(exc)
+        self.records.append_attempt(attempt)
+        observation = self.destination.observe(decision.effect_id)
+        self.records.append_observation(observation)
+        return attempt, observation
+
+    def reconcile(self, effect_id: str) -> ReconciliationResult:
+        observation = self.destination.observe(effect_id)
+        result = "applied" if observation.state == "applied" else (
+            "safe_to_retry" if observation.state == "absent" else "hold"
+        )
+        value = ReconciliationResult(
+            effect_id=effect_id, reconciled_at=_iso(_now()),
+            result=result, observation=observation
+        )
+        self.records.append_observation(observation)
+        self.records.append_reconciliation(value)
+        return value
+
+    def _resolve(self, proposal: RuntimeProposal, now: datetime) -> tuple[list[str], AuthorizationBinding | None]:
+        reasons = self._manifest_mismatches(proposal, now)
+        context = self.resolver.authority_context(proposal.authority_context_ref or "")
+        if context is None:
+            return sorted(set(reasons + ["authority_context_missing"])), None
+        if context.get("schema_version") != AUTHORITY_CONTEXT_VERSION:
+            reasons.append("authority_context_version_mismatch")
+        if context.get("interface_status") != AUTHORITY_CONTEXT_STATUS:
+            reasons.append("authority_context_status_mismatch")
+        if context.get("requirement", {}).get("requirement_id") != proposal.requirement_id:
+            reasons.append("authority_requirement_mismatch")
+        grant = context.get("grant")
+        if not grant:
+            return sorted(set(reasons + ["issued_grant_missing"])), None
+
+        identity = self.resolver.identity_status(context["acting_identity"], context["principal"])
+        if not identity.authenticated or not identity.delegation_valid:
+            reasons.append("identity_or_delegation_invalid")
+        if identity.principal != context["principal"] or identity.identity != context["acting_identity"]:
+            reasons.append("identity_binding_mismatch")
+
+        mandate = self.resolver.issuer_mandate(grant["issuer"], grant["issuer_role"])
+        if not mandate.mandate_valid:
+            reasons.append("issuer_mandate_invalid")
+
+        status = self.resolver.grant_status(grant["grant_id"])
+        if status is None or status.status != "active":
+            reasons.append("grant_not_active")
+        elif status.revision != grant["revision"]:
+            reasons.append("grant_revision_stale")
+
+        if grant["requirement_id"] != context["requirement"]["requirement_id"]:
+            reasons.append("grant_requirement_mismatch")
+        if grant["grantee"] != context["principal"] or grant["acting_identity"] != context["acting_identity"]:
+            reasons.append("grant_identity_mismatch")
+        if _parse(grant["not_before"]) > now or _parse(grant["expires_at"]) <= now:
+            reasons.append("grant_outside_validity")
+        if self._matching_permission(grant, proposal) is None:
+            reasons.append("grant_scope_mismatch")
+        delegation = grant.get("delegation", {})
+        if delegation.get("parent_grant_id") is not None and not identity.chain:
+            reasons.append("delegation_chain_missing")
+
+        policy_versions = grant.get("policy_versions", [])
+        for item in policy_versions:
+            current = self.resolver.policy_status(item["ref"])
+            if current is None or current.status != "active" or current.version != item["version"]:
+                reasons.append("policy_stale_or_changed")
+
+        proposal_commitment = commitment(proposal.model_dump(mode="json", exclude_none=False))
+        for req in context["requirement"].get("approvals", []):
+            matches = [
+                self.resolver.approval_status(ref)
+                for ref in grant.get("approval_refs", [])
+            ]
+            matches = [x for x in matches if x is not None and x.role_id == req["role_id"]]
+            if not matches:
+                reasons.append("required_approval_missing")
+                continue
+            for approval in matches:
+                if approval.status != "active":
+                    reasons.append("approval_not_active")
+                if approval.grant_id != grant["grant_id"] or approval.grant_revision != grant["revision"]:
+                    reasons.append("approval_grant_binding_mismatch")
+                if approval.proposal_commitment != proposal_commitment:
+                    reasons.append("approval_operation_binding_mismatch")
+                if req.get("independent_of_actor") and approval.approver == proposal.actor:
+                    reasons.append("approval_independence_violation")
+
+        for obligation in context["requirement"].get("evidence", []):
+            current = self.resolver.evidence_status(obligation["obligation_id"])
+            if obligation["required"] and obligation["kind"] == "authorization":
+                if current is None or current.state != "current":
+                    reasons.append("required_evidence_not_current")
+            elif (current is None or current.state == "unknown") and obligation.get("unknown_behavior") == "hold_effect":
+                reasons.append("context_unknown_requires_hold")
+
+        if reasons:
+            return sorted(set(reasons)), None
+        return [], AuthorizationBinding(
+            proposal_commitment=proposal_commitment,
+            manifest_id=proposal.manifest_id, manifest_version=proposal.manifest_version,
+            manifest_digest=proposal.manifest_digest, authority_context_id=context["context_id"],
+            requirement_id=proposal.requirement_id or "", grant_id=grant["grant_id"],
+            grant_revision=grant["revision"], policy_versions=copy.deepcopy(policy_versions),
+            adapter_id=proposal.adapter_id, target=proposal.target,
+            payload_commitment=proposal.payload_commitment
+        )
+
+    def _manifest_mismatches(self, proposal: RuntimeProposal, now: datetime) -> list[str]:
+        mismatches: list[str] = []
+        if proposal.manifest_version != MANIFEST_VERSION:
+            mismatches.append("unsupported_manifest_version")
+        if self.manifest.get("manifest_version") != MANIFEST_VERSION:
+            mismatches.append("manifest_version_mismatch")
+        if proposal.manifest_id != self.manifest.get("manifest_id"):
+            mismatches.append("manifest_id_mismatch")
+        if proposal.manifest_digest != commitment(self.manifest):
+            mismatches.append("manifest_digest_mismatch")
+        if proposal.payload_commitment != commitment(proposal.payload):
+            mismatches.append("payload_commitment_mismatch")
+        action = next((x for x in self.manifest.get("actions", []) if x.get("action_id") == proposal.action_id), None)
+        if action is None:
+            return sorted(set(mismatches + ["unknown_action"]))
+        tool = next((x for x in self.manifest.get("tools", []) if x.get("tool_name") == action.get("tool_name")), None)
+        if tool is None or tool.get("adapter_id") != proposal.adapter_id:
+            mismatches.append("adapter_mismatch")
+        target_policy = action.get("target_policy")
+        if not target_policy or target_policy.get("allow_any_target") or proposal.target not in target_policy.get("allowed_targets", []):
+            mismatches.append("target_out_of_scope")
+        payload_policy = action.get("payload_policy")
+        if payload_policy is None:
+            mismatches.append("missing_payload_policy")
+        else:
+            keys = set(proposal.payload)
+            required = set(payload_policy.get("required_fields", []))
+            optional = set(payload_policy.get("optional_fields", []))
+            forbidden = set(payload_policy.get("forbidden_fields", []))
+            if required - keys:
+                mismatches.append("missing_required_payload_field")
+            if keys & forbidden:
+                mismatches.append("forbidden_payload_field")
+            if keys - required - optional:
+                mismatches.append("undeclared_payload_field")
+        limits = action.get("effect_limits")
+        if limits:
+            if proposal.effects > int(limits.get("max_effects", 0)):
+                mismatches.append("effect_count_exceeded")
+            if limits.get("max_amount") is not None and proposal.amount > float(limits["max_amount"]):
+                mismatches.append("amount_exceeded")
+            if limits.get("unit") is not None and proposal.unit != limits["unit"]:
+                mismatches.append("amount_unit_mismatch")
+        needed = {x["scope"] for x in action.get("authority_required", []) if x.get("required", True)}
+        if not needed.issubset(set(proposal.requested_permissions)):
+            mismatches.append("missing_requested_permission")
+        auth = action.get("authority_context")
+        if auth:
+            if proposal.authority_context_ref != auth.get("profile_ref"):
+                mismatches.append("authority_profile_mismatch")
+            if proposal.requirement_id != auth.get("requirement_id"):
+                mismatches.append("authority_requirement_mismatch")
+        if proposal.not_before and _parse(proposal.not_before) > now:
+            mismatches.append("proposal_not_yet_valid")
+        if proposal.expires_at and _parse(proposal.expires_at) <= now:
+            mismatches.append("proposal_expired")
+        return sorted(set(mismatches))
+
+    def _matching_permission(self, grant: dict, proposal: RuntimeProposal) -> dict | None:
+        action = next((x for x in self.manifest["actions"] if x["action_id"] == proposal.action_id), None)
+        if action is None:
+            return None
+        for permission in grant.get("permissions", []):
+            if permission["action"] != action["action_name"]:
+                continue
+            if proposal.target not in permission["targets"]:
+                continue
+            if not set(proposal.requested_permissions).issubset(set(permission["data_scopes"])):
+                continue
+            if proposal.amount > float(permission["max_amount"]):
+                continue
+            if proposal.unit != permission["unit"]:
+                continue
+            if proposal.effects > int(permission["max_effects"]):
+                continue
+            return permission
+        return None
