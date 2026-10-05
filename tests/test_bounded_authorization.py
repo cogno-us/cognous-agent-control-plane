@@ -20,6 +20,7 @@ from agent_control_plane.bounded import (
     LocalRefundDestination,
     MandateStatus,
     PolicyStatus,
+    RoleMappingStatus,
     RuntimeProposal,
     SyntheticResolver,
     commitment,
@@ -216,6 +217,8 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
             observed_at=NOW.isoformat(),
             version="status-v1",
             authority_basis_ref="urn:cognous:authority-basis:synthetic",
+            institution_id=INSTITUTION,
+            authority_domain="customer-refunds",
         )
         role = ctx["requirement"]["approvals"][0]["role_id"]
         approval_ref = grant["approval_refs"][0]
@@ -228,7 +231,23 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
             proposal_commitment=commitment(p.model_dump(mode="json", exclude_none=False)),
             policy_versions=copy.deepcopy(grant["policy_versions"]),
             observed_at=NOW.isoformat(),
+            institution_id=INSTITUTION,
+            authority_domain="customer-refunds",
         )
+    aliases = {
+        "customer-service-supervisor": ["urn:cognous:role:customer-service-supervisor"],
+        "refund-authorizer": ["urn:cognous:role:refund-authorizer"],
+    }
+    mapping = RoleMappingStatus(
+        institution_id=INSTITUTION,
+        version="roles-v1",
+        digest=commitment({
+            "institution_id": INSTITUTION,
+            "version": "roles-v1",
+            "aliases": aliases,
+        }),
+        aliases=aliases,
+    )
     return SyntheticResolver(
         contexts={PROFILE: ctx},
         statuses=statuses,
@@ -239,6 +258,8 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 authenticated=True,
                 delegation_valid=True,
                 observed_at=NOW.isoformat(),
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
                 chain=["urn:cognous:grant:parent"] if delegated else [],
             )
         },
@@ -248,6 +269,8 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 issuer_role=ISSUER_ROLE,
                 mandate_valid=True,
                 observed_at=NOW.isoformat(),
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             )
         },
         approvals=approvals,
@@ -257,6 +280,8 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 version=POLICY_VERSION,
                 status="active",
                 observed_at=NOW.isoformat(),
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             )
         },
         conflicts={
@@ -264,30 +289,35 @@ def resolver_for(p, *, tier="T1", with_grant=True, delegated=False):
                 requirement_id=p.requirement_id,
                 state="clear",
                 observed_at=NOW.isoformat(),
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             )
         },
-        role_aliases={
-            "customer-service-supervisor": "urn:cognous:role:customer-service-supervisor",
-            "refund-authorizer": "urn:cognous:role:refund-authorizer",
-        },
+        role_mappings={INSTITUTION: mapping},
         evidence={
             "urn:cognous:evidence:refund-entitlement": EvidenceStatus(
                 obligation_id="urn:cognous:evidence:refund-entitlement",
                 state="current",
                 observed_at=NOW.isoformat(),
                 source_ref="urn:cognous:source:entitlement",
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             ),
             "urn:cognous:evidence:refund-approval": EvidenceStatus(
                 obligation_id="urn:cognous:evidence:refund-approval",
                 state="current",
                 observed_at=NOW.isoformat(),
                 source_ref="urn:cognous:source:approval",
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             ),
             "urn:cognous:evidence:optional-context": EvidenceStatus(
                 obligation_id="urn:cognous:evidence:optional-context",
                 state="unknown",
                 observed_at=NOW.isoformat(),
                 source_ref="urn:cognous:source:optional",
+                institution_id=INSTITUTION,
+                authority_domain="customer-refunds",
             ),
         },
     )
@@ -376,7 +406,7 @@ def test_revocation_expiry_stale_status_and_policy_change_hold(tmp_path):
 
     r = resolver_for(p)
     r.statuses[grant["grant_id"]].observed_at = (NOW - timedelta(minutes=5)).isoformat()
-    assert "grant_status_stale" in workflow(tmp_path / "c", p, resolver=r).decide(p, now=NOW).reasons
+    assert "grant_status_stale_or_future" in workflow(tmp_path / "c", p, resolver=r).decide(p, now=NOW).reasons
 
     r = resolver_for(p)
     r.policies[POLICY_REF].version = "2.0"
@@ -410,7 +440,7 @@ def test_stale_required_evidence_holds_but_optional_unknown_does_not(tmp_path):
         NOW - timedelta(minutes=10)
     ).isoformat()
     decision = workflow(tmp_path / "a", p, resolver=r).decide(p, now=NOW)
-    assert "required_evidence_stale" in decision.reasons
+    assert "required_evidence_stale_or_future" in decision.reasons
 
     r2 = resolver_for(p)
     decision2 = workflow(tmp_path / "b", p, resolver=r2).decide(p, now=NOW)
@@ -424,6 +454,140 @@ def test_unresolved_conflict_holds_effect(tmp_path):
     decision = workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
     assert decision.result == "hold"
     assert "authority_conflict_unresolved" in decision.reasons
+
+
+def test_wrong_evidence_source_binding_holds_and_no_effect(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    r.evidence["urn:cognous:evidence:refund-entitlement"].source_ref = "urn:wrong:source"
+    flow = workflow(tmp_path, p, resolver=r)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "hold"
+    assert "evidence_binding_mismatch" in decision.reasons
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+def test_stale_approval_identity_and_mandate_hold(tmp_path):
+    p = proposal()
+
+    r = resolver_for(p)
+    approval_ref = r.contexts[PROFILE]["grant"]["approval_refs"][0]
+    r.approvals[approval_ref].observed_at = (NOW - timedelta(days=365)).isoformat()
+    d = workflow(tmp_path / "approval", p, resolver=r).decide(p, now=NOW)
+    assert "approval_status_stale_or_future" in d.reasons
+
+    r = resolver_for(p)
+    r.identities[ACTOR].observed_at = (NOW - timedelta(days=365)).isoformat()
+    d = workflow(tmp_path / "identity", p, resolver=r).decide(p, now=NOW)
+    assert "identity_status_stale_or_future" in d.reasons
+
+    r = resolver_for(p)
+    r.mandates[f"{ISSUER}|{ISSUER_ROLE}"].observed_at = (NOW - timedelta(days=365)).isoformat()
+    d = workflow(tmp_path / "mandate", p, resolver=r).decide(p, now=NOW)
+    assert "issuer_mandate_stale_or_future" in d.reasons
+
+
+def test_resolver_record_identifier_binding_is_enforced(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
+    r.statuses[grant_id].grant_id = "urn:wrong:grant"
+    d = workflow(tmp_path / "grant", p, resolver=r).decide(p, now=NOW)
+    assert "grant_status_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    r.policies[POLICY_REF].ref = "urn:wrong:policy"
+    d = workflow(tmp_path / "policy", p, resolver=r).decide(p, now=NOW)
+    assert "policy_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    r.conflicts[p.requirement_id].requirement_id = "urn:wrong:requirement"
+    d = workflow(tmp_path / "conflict", p, resolver=r).decide(p, now=NOW)
+    assert "conflict_status_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    approval_ref = r.contexts[PROFILE]["grant"]["approval_refs"][0]
+    r.approvals[approval_ref].approval_ref = "urn:wrong:approval"
+    d = workflow(tmp_path / "approval", p, resolver=r).decide(p, now=NOW)
+    assert "approval_binding_mismatch" in d.reasons
+
+    r = resolver_for(p)
+    r.mandates[f"{ISSUER}|{ISSUER_ROLE}"].issuer = "urn:wrong:issuer"
+    d = workflow(tmp_path / "mandate", p, resolver=r).decide(p, now=NOW)
+    assert "issuer_mandate_binding_mismatch" in d.reasons
+
+
+def test_future_resolver_timestamp_beyond_clock_tolerance_holds(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
+    r.statuses[grant_id].observed_at = (NOW + timedelta(seconds=6)).isoformat()
+    d = workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
+    assert d.result == "hold"
+    assert "grant_status_stale_or_future" in d.reasons
+
+
+def test_requirement_narrower_than_grant_holds(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    r.contexts[PROFILE]["requirement"]["permissions"][0]["max_amount"] = 1.0
+    flow = workflow(tmp_path, p, resolver=r)
+    d = flow.decide(p, now=NOW)
+    assert d.result == "hold"
+    assert "requirement_scope_mismatch" in d.reasons
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+def test_mutated_effect_or_binding_cannot_execute(tmp_path):
+    p = proposal()
+    flow = workflow(tmp_path, p)
+    d = flow.decide(p, now=NOW)
+    assert d.result == "authorized"
+
+    mutated = d.model_copy(deep=True)
+    mutated.effect_id = "caller-chosen-effect"
+    with pytest.raises(PermissionError):
+        flow.execute(p, mutated, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+    mutated2 = d.model_copy(deep=True)
+    mutated2.binding.target = "urn:cognous:synthetic-account:attacker"
+    with pytest.raises(PermissionError):
+        flow.execute(p, mutated2, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+def test_role_mapping_is_versioned_scoped_and_revalidated(tmp_path):
+    p = proposal()
+    r = resolver_for(p)
+    flow = workflow(tmp_path, p, resolver=r)
+    d = flow.decide(p, now=NOW)
+    assert d.result == "authorized"
+
+    mapping = r.role_mappings[INSTITUTION]
+    mapping.version = "roles-v2"
+    mapping.digest = commitment({
+        "institution_id": INSTITUTION,
+        "version": mapping.version,
+        "aliases": mapping.aliases,
+    })
+    with pytest.raises(PermissionError):
+        flow.execute(p, d, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+    r2 = resolver_for(p)
+    r2.role_mappings[INSTITUTION].aliases["customer-service-supervisor"] = [
+        "urn:cognous:role:customer-service-supervisor",
+        "urn:cognous:role:ambiguous",
+    ]
+    r2.role_mappings[INSTITUTION].digest = commitment({
+        "institution_id": INSTITUTION,
+        "version": r2.role_mappings[INSTITUTION].version,
+        "aliases": r2.role_mappings[INSTITUTION].aliases,
+    })
+    d2 = workflow(tmp_path / "ambiguous", p, resolver=r2).decide(p, now=NOW)
+    assert d2.result == "hold"
+    assert "review_requirement_not_resolved" in d2.reasons
 
 
 def test_changed_policy_after_decision_prevents_effect(tmp_path):
