@@ -342,11 +342,13 @@ class BoundedAuthorizationWorkflow:
     """Resolve, decide, revalidate and execute one finite declared operation."""
 
     def __init__(self, *, manifest: dict, resolver: Resolver,
-                 destination: LocalRefundDestination, records: BoundedRecordStore):
+                 destination: LocalRefundDestination, records: BoundedRecordStore,
+                 status_max_age_seconds: int = 60):
         self.manifest = copy.deepcopy(manifest)
         self.resolver = resolver
         self.destination = destination
         self.records = records
+        self.status_max_age_seconds = status_max_age_seconds
 
     def decide(self, proposal: RuntimeProposal, *, now: datetime | None = None) -> RuntimeDecision:
         now = now or _now()
@@ -452,6 +454,22 @@ class BoundedAuthorizationWorkflow:
             reasons.append("authority_context_status_mismatch")
         if context.get("requirement", {}).get("requirement_id") != proposal.requirement_id:
             reasons.append("authority_requirement_mismatch")
+        if context.get("principal") != proposal.principal or context.get("acting_identity") != proposal.actor:
+            reasons.append("proposal_identity_binding_mismatch")
+        action = next((x for x in self.manifest.get("actions", []) if x.get("action_id") == proposal.action_id), None)
+        declared_auth = (action or {}).get("authority_context") or {}
+        if context.get("institution", {}).get("institution_id") != declared_auth.get("institution_id"):
+            reasons.append("institution_mismatch")
+        if context.get("institution", {}).get("authority_domain") != declared_auth.get("authority_domain"):
+            reasons.append("authority_domain_mismatch")
+        if context.get("requirement", {}).get("consequence", {}).get("tier") != declared_auth.get("consequence_tier"):
+            reasons.append("consequence_tier_mismatch")
+        review = (action or {}).get("review_requirement") or {}
+        if review.get("mode") in {"human_review", "approval_required"}:
+            declared_role = review.get("reviewer_role")
+            required_roles = {x.get("role_id") for x in context.get("requirement", {}).get("approvals", [])}
+            if declared_role not in required_roles:
+                reasons.append("review_requirement_not_resolved")
         grant = context.get("grant")
         if not grant:
             return sorted(set(reasons + ["issued_grant_missing"])), None
@@ -471,6 +489,8 @@ class BoundedAuthorizationWorkflow:
             reasons.append("grant_not_active")
         elif status.revision != grant["revision"]:
             reasons.append("grant_revision_stale")
+        elif (now - _parse(status.observed_at)).total_seconds() > self.status_max_age_seconds:
+            reasons.append("grant_status_stale")
 
         if grant["requirement_id"] != context["requirement"]["requirement_id"]:
             reasons.append("grant_requirement_mismatch")
@@ -489,6 +509,8 @@ class BoundedAuthorizationWorkflow:
             current = self.resolver.policy_status(item["ref"])
             if current is None or current.status != "active" or current.version != item["version"]:
                 reasons.append("policy_stale_or_changed")
+            elif (now - _parse(current.observed_at)).total_seconds() > self.status_max_age_seconds:
+                reasons.append("policy_status_stale")
 
         proposal_commitment = commitment(proposal.model_dump(mode="json", exclude_none=False))
         for req in context["requirement"].get("approvals", []):
@@ -507,6 +529,8 @@ class BoundedAuthorizationWorkflow:
                     reasons.append("approval_grant_binding_mismatch")
                 if approval.proposal_commitment != proposal_commitment:
                     reasons.append("approval_operation_binding_mismatch")
+                if approval.policy_versions != policy_versions:
+                    reasons.append("approval_policy_binding_mismatch")
                 if req.get("independent_of_actor") and approval.approver == proposal.actor:
                     reasons.append("approval_independence_violation")
 
@@ -515,6 +539,8 @@ class BoundedAuthorizationWorkflow:
             if obligation["required"] and obligation["kind"] == "authorization":
                 if current is None or current.state != "current":
                     reasons.append("required_evidence_not_current")
+                elif (now - _parse(current.observed_at)).total_seconds() > int(obligation["max_age_seconds"]):
+                    reasons.append("required_evidence_stale")
             elif (current is None or current.state == "unknown") and obligation.get("unknown_behavior") == "hold_effect":
                 reasons.append("context_unknown_requires_hold")
 
