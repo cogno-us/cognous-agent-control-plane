@@ -488,7 +488,7 @@ class BoundedAuthorizationWorkflow:
         now: datetime | None = None,
         lose_ack: bool = False,
         partial: bool = False,
-    ) -> tuple[EffectAttempt, EffectObservation]:
+    ) -> tuple[EffectAttempt, EffectObservation | None]:
         now = now or _now()
         persisted = self.records.decision(decision.decision_id)
         if persisted is None or persisted != decision:
@@ -506,12 +506,12 @@ class BoundedAuthorizationWorkflow:
             raise PermissionError("adapter substitution detected")
 
         effect_id = persisted.effect_id
-        existing = self.destination.observe(effect_id)
         prior_attempts = [
             item for item in self.records.load().attempts
             if item.effect_id == effect_id
         ]
-        rec = self._reconcile_observation(effect_id, existing, now=now)
+        rec = self._observe_and_reconcile(effect_id, now=now)
+        existing = rec.observation
         if rec.result == "applied":
             attempt = EffectAttempt(
                 attempt_id=str(uuid.uuid4()),
@@ -523,7 +523,7 @@ class BoundedAuthorizationWorkflow:
             )
             self.records.append_attempt(attempt)
             return attempt, existing
-        if existing.state == "partial" and rec.observation_accepted:
+        if existing is not None and existing.state == "partial" and rec.observation_accepted:
             attempt = EffectAttempt(
                 attempt_id=str(uuid.uuid4()),
                 effect_id=effect_id,
@@ -574,9 +574,8 @@ class BoundedAuthorizationWorkflow:
             attempt.error = str(exc)
 
         self.records.append_attempt(attempt)
-        observation = self.destination.observe(effect_id)
-        self.records.append_observation(observation)
-        return attempt, observation
+        post = self._observe_and_reconcile(effect_id, now=now)
+        return attempt, post.observation if post.observation_accepted else None
 
     def reconcile(
         self,
@@ -585,10 +584,19 @@ class BoundedAuthorizationWorkflow:
         now: datetime | None = None,
     ) -> ReconciliationResult:
         """Classify one observation without renewing authority or dispatching an effect."""
+        return self._observe_and_reconcile(effect_id, now=now)
+
+    def _observe_and_reconcile(
+        self,
+        effect_id: str,
+        *,
+        now: datetime | None,
+    ) -> ReconciliationResult:
+        """Observe once and retain either validated state or rejection diagnostics."""
         try:
             observation = self.destination.observe(effect_id)
         except Exception as exc:
-            reasons = []
+            reasons: list[str] = []
             evaluation_time = self._trusted_evaluation_time(now, reasons)
             policy = self.observation_policy
             if policy is None:
