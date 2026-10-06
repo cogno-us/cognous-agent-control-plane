@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed — reconciliation observation validation
+- Reconciliation validates observation effect identity and temporal validity before accepting applied or absent state.
+- Explicit ObservationPolicy and timezone-aware evaluation time are required; missing, stale, malformed, timezone-free, excessive-future, unknown and unavailable observations fail closed.
+- Fresh absence is now represented as observed_absent with retry_eligible=false rather than being promoted to safe_to_retry.
+- Rejected observations remain attached to reconciliation evidence with reasons but are not added to accepted destination observations.
+- Execution validates both pre-dispatch and post-dispatch observations; rejected post-dispatch evidence is retained in reconciliation records but is not added to accepted destination observations.
+- Execution preserves acknowledgement/attempt history independently from observation validity and will not resubmit after any prior attempt merely because a fresh absence is observed.
+- Historical safe_to_retry records remain parseable for reconstruction but do not become current retry permission.
+
+
 ### Fixed — Governor validation gaps
 - Resolver records are now rebound to requested identifiers, source references, institution and authority domain instead of trusting lookup keys.
 - Identity, mandate and approval observations now have explicit freshness limits; future observations beyond clock tolerance fail closed.
