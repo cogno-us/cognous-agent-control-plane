@@ -12,6 +12,7 @@ from agent_control_plane.bounded import (
     IdentityStatus,
     LocalRefundDestination,
     MandateStatus,
+    ObservationPolicy,
     PolicyStatus,
     ReconciliationResult,
     RoleMappingStatus,
@@ -62,6 +63,7 @@ from agent_control_plane.tools import ToolAdapter, execute_with_control
 from agent_control_plane.validation import validate_replay_bundle, validate_run_record
 
 __all__ = [
+    "ObservationPolicy",
     "RoleMappingStatus",
     "commitment",
     "SyntheticResolver",
