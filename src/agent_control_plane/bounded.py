@@ -511,32 +511,34 @@ class BoundedAuthorizationWorkflow:
             item for item in self.records.load().attempts
             if item.effect_id == effect_id
         ]
-        if existing.state in {"applied", "partial"} or prior_attempts:
-            rec = self._reconcile_observation(effect_id, existing, now=now)
-            if rec.result == "applied":
-                attempt = EffectAttempt(
-                    attempt_id=str(uuid.uuid4()),
-                    effect_id=effect_id,
-                    decision_id=persisted.decision_id,
-                    started_at=_iso(now),
-                    status="acknowledged",
-                    acknowledgement={"reconciled_existing": True},
-                )
-                self.records.append_attempt(attempt)
-                return attempt, existing
-            if existing.state == "partial" and rec.observation_accepted:
-                attempt = EffectAttempt(
-                    attempt_id=str(uuid.uuid4()),
-                    effect_id=effect_id,
-                    decision_id=persisted.decision_id,
-                    started_at=_iso(now),
-                    status="partial",
-                    acknowledgement={"reconciled_existing": True},
-                )
-                self.records.append_attempt(attempt)
-                return attempt, existing
+        rec = self._reconcile_observation(effect_id, existing, now=now)
+        if rec.result == "applied":
+            attempt = EffectAttempt(
+                attempt_id=str(uuid.uuid4()),
+                effect_id=effect_id,
+                decision_id=persisted.decision_id,
+                started_at=_iso(now),
+                status="acknowledged",
+                acknowledgement={"reconciled_existing": True},
+            )
+            self.records.append_attempt(attempt)
+            return attempt, existing
+        if existing.state == "partial" and rec.observation_accepted:
+            attempt = EffectAttempt(
+                attempt_id=str(uuid.uuid4()),
+                effect_id=effect_id,
+                decision_id=persisted.decision_id,
+                started_at=_iso(now),
+                status="partial",
+                acknowledgement={"reconciled_existing": True},
+            )
+            self.records.append_attempt(attempt)
+            return attempt, existing
+        if rec.result != "observed_absent":
+            raise PermissionError("destination observation is not valid for effect dispatch")
+        if prior_attempts:
             raise PermissionError(
-                "prior effect attempt cannot be resubmitted without explicit retry eligibility"
+                "observed absence does not establish retry eligibility after a prior attempt"
             )
 
         attempt = EffectAttempt(
