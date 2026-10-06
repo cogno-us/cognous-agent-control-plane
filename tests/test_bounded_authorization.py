@@ -14,6 +14,8 @@ from agent_control_plane.bounded import (
     BoundedAuthorizationWorkflow,
     BoundedRecordStore,
     ConflictStatus,
+    EffectAttempt,
+    EffectObservation,
     EvidenceStatus,
     GrantStatus,
     IdentityStatus,
@@ -21,6 +23,7 @@ from agent_control_plane.bounded import (
     MandateStatus,
     ObservationPolicy,
     PolicyStatus,
+    ReconciliationResult,
     RoleMappingStatus,
     RuntimeProposal,
     SyntheticResolver,
@@ -718,11 +721,13 @@ def test_concurrent_distinct_effects_respect_local_cumulative_cap(tmp_path):
     r2 = resolver_for(p2)
     f1 = BoundedAuthorizationWorkflow(
         manifest=manifest(), resolver=r1, destination=flow.destination,
-        records=BoundedRecordStore(tmp_path / "run1.json", "run-1")
+        records=BoundedRecordStore(tmp_path / "run1.json", "run-1"),
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
     )
     f2 = BoundedAuthorizationWorkflow(
         manifest=manifest(), resolver=r2, destination=flow.destination,
-        records=BoundedRecordStore(tmp_path / "run2.json", "run-2")
+        records=BoundedRecordStore(tmp_path / "run2.json", "run-2"),
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
     )
     d1 = f1.decide(p1, now=NOW)
     d2 = f2.decide(p2, now=NOW)
@@ -737,3 +742,306 @@ def test_concurrent_distinct_effects_respect_local_cumulative_cap(tmp_path):
     assert len(state["effects"]) == 1
     grant_id = r.contexts[PROFILE]["grant"]["grant_id"]
     assert state["grant_effect_counts"][grant_id] == 1
+
+
+class ObservationProxy:
+    """Test adapter that injects one observation without implementing dispatch semantics."""
+
+    def __init__(self, base, *, observation=None, error=None):
+        self.base = base
+        self.observation = observation
+        self.error = error
+
+    def observe(self, effect_id):
+        if self.error is not None:
+            raise self.error
+        return self.observation.model_copy(deep=True)
+
+    def apply(self, **kwargs):
+        return self.base.apply(**kwargs)
+
+    def snapshot(self):
+        return self.base.snapshot()
+
+
+def observation_workflow(tmp_path, observation, *, policy=True, error=None):
+    p = proposal()
+    resolver = resolver_for(p)
+    base = LocalRefundDestination(tmp_path / "destination.json")
+    records = BoundedRecordStore(tmp_path / "run.json", "observation-run")
+    return (
+        base,
+        records,
+        BoundedAuthorizationWorkflow(
+            manifest=manifest(),
+            resolver=resolver,
+            destination=ObservationProxy(base, observation=observation, error=error),
+            records=records,
+            observation_policy=(
+                ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5)
+                if policy else None
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("observation", "reason"),
+    [
+        (
+            EffectObservation(
+                effect_id="effect-1",
+                observed_at=(NOW - timedelta(seconds=301)).isoformat(),
+                state="absent",
+                destination_state={},
+            ),
+            "observation_stale",
+        ),
+        (
+            EffectObservation(
+                effect_id="effect-1",
+                observed_at=None,
+                state="absent",
+                destination_state={},
+            ),
+            "observation_time_missing",
+        ),
+        (
+            EffectObservation(
+                effect_id="different-effect",
+                observed_at=NOW.isoformat(),
+                state="absent",
+                destination_state={},
+            ),
+            "observation_effect_id_mismatch",
+        ),
+    ],
+)
+def test_invalid_absence_evidence_holds_and_is_retained(tmp_path, observation, reason):
+    base, records, flow = observation_workflow(tmp_path, observation)
+    before = base.snapshot()
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "hold"
+    assert result.retry_eligible is False
+    assert result.observation_accepted is False
+    assert reason in result.reasons
+    assert result.observation is not None
+    assert records.load().observations == []
+    assert records.load().reconciliations[-1].reasons == result.reasons
+    assert base.snapshot() == before
+
+
+def test_missing_observation_age_policy_holds(tmp_path):
+    observation = EffectObservation(
+        effect_id="effect-1",
+        observed_at=NOW.isoformat(),
+        state="absent",
+        destination_state={},
+    )
+    base, records, flow = observation_workflow(tmp_path, observation, policy=False)
+    before = base.snapshot()
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "hold"
+    assert "observation_policy_missing" in result.reasons
+    assert result.observation_accepted is False
+    assert records.load().observations == []
+    assert base.snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("observed_at", "reason"),
+    [
+        ("not-a-timestamp", "observation_time_malformed"),
+        ("2026-10-05T19:00:00", "observation_time_timezone_missing"),
+        ((NOW + timedelta(seconds=6)).isoformat(), "observation_time_future"),
+    ],
+)
+def test_invalid_observation_time_holds(tmp_path, observed_at, reason):
+    observation = EffectObservation(
+        effect_id="effect-1",
+        observed_at=observed_at,
+        state="absent",
+        destination_state={},
+    )
+    base, records, flow = observation_workflow(tmp_path, observation)
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "hold"
+    assert reason in result.reasons
+    assert result.observation_accepted is False
+    assert records.load().observations == []
+    assert base.snapshot()["effects"] == {}
+
+
+def test_missing_or_untrusted_evaluation_time_holds(tmp_path):
+    observation = EffectObservation(
+        effect_id="effect-1",
+        observed_at=NOW.isoformat(),
+        state="absent",
+        destination_state={},
+    )
+    _, _, flow = observation_workflow(tmp_path / "missing", observation)
+    missing = flow.reconcile("effect-1")
+    assert missing.result == "hold"
+    assert "evaluation_time_missing" in missing.reasons
+
+    _, _, flow2 = observation_workflow(tmp_path / "naive", observation)
+    naive = flow2.reconcile("effect-1", now=NOW.replace(tzinfo=None))
+    assert naive.result == "hold"
+    assert "evaluation_time_timezone_missing" in naive.reasons
+
+
+def test_unknown_and_unavailable_observation_hold_without_mutation(tmp_path):
+    unknown = EffectObservation(
+        effect_id="effect-1",
+        observed_at=NOW.isoformat(),
+        state="unknown",
+        destination_state={},
+    )
+    base, records, flow = observation_workflow(tmp_path / "unknown", unknown)
+    before = base.snapshot()
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "hold"
+    assert "observation_state_unknown" in result.reasons
+    assert result.observation_accepted is False
+    assert records.load().observations == []
+    assert base.snapshot() == before
+
+    base2, records2, flow2 = observation_workflow(
+        tmp_path / "unavailable",
+        unknown,
+        error=OSError("observation channel unavailable"),
+    )
+    before2 = base2.snapshot()
+    unavailable = flow2.reconcile("effect-1", now=NOW)
+    assert unavailable.result == "hold"
+    assert unavailable.observation is None
+    assert unavailable.retry_eligible is False
+    assert "observation_unavailable:OSError" in unavailable.reasons
+    assert records2.load().observations == []
+    assert base2.snapshot() == before2
+
+
+def test_fresh_matching_applied_and_absent_are_distinct_facts(tmp_path):
+    applied = EffectObservation(
+        effect_id="effect-1",
+        observed_at=NOW.isoformat(),
+        state="applied",
+        destination_state={"effect_id": "effect-1", "state": "applied"},
+    )
+    base, records, flow = observation_workflow(tmp_path / "applied", applied)
+    before = base.snapshot()
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "applied"
+    assert result.observation_accepted is True
+    assert result.retry_eligible is False
+    assert records.load().observations[-1].state == "applied"
+    assert base.snapshot() == before
+
+    absent = EffectObservation(
+        effect_id="effect-2",
+        observed_at=NOW.isoformat(),
+        state="absent",
+        destination_state={},
+    )
+    base2, records2, flow2 = observation_workflow(tmp_path / "absent", absent)
+    before2 = base2.snapshot()
+    result2 = flow2.reconcile("effect-2", now=NOW)
+    assert result2.result == "observed_absent"
+    assert result2.observation_accepted is True
+    assert result2.retry_eligible is False
+    assert "safe_to_retry" != result2.result
+    assert records2.load().observations[-1].state == "absent"
+    assert base2.snapshot() == before2
+
+
+@pytest.mark.parametrize(
+    "observation",
+    [
+        EffectObservation(
+            effect_id="wrong-effect",
+            observed_at=NOW.isoformat(),
+            state="applied",
+            destination_state={"effect_id": "effect-1", "state": "applied"},
+        ),
+        EffectObservation(
+            effect_id="effect-1",
+            observed_at=NOW.isoformat(),
+            state="applied",
+            destination_state={"effect_id": "wrong-effect", "state": "applied"},
+        ),
+        EffectObservation(
+            effect_id="effect-1",
+            observed_at=NOW.isoformat(),
+            state="applied",
+            destination_state={"effect_id": "effect-1", "state": "partial"},
+        ),
+    ],
+)
+def test_invalid_positive_observation_cannot_establish_applied(tmp_path, observation):
+    base, records, flow = observation_workflow(tmp_path, observation)
+    result = flow.reconcile("effect-1", now=NOW)
+    assert result.result == "hold"
+    assert result.observation_accepted is False
+    assert records.load().observations == []
+    assert base.snapshot()["effects"] == {}
+
+
+def test_historical_safe_to_retry_record_is_parseable_but_not_retry_permission(tmp_path):
+    historical = ReconciliationResult.model_validate({
+        "effect_id": "effect-1",
+        "reconciled_at": NOW.isoformat(),
+        "result": "safe_to_retry",
+        "observation": {
+            "effect_id": "effect-1",
+            "observed_at": NOW.isoformat(),
+            "state": "absent",
+            "destination_state": {},
+        },
+    })
+    assert historical.result == "safe_to_retry"
+    assert historical.retry_eligible is False
+    base = LocalRefundDestination(tmp_path / "destination.json")
+    before = base.snapshot()
+    records = BoundedRecordStore(tmp_path / "run.json", "history")
+    records.append_reconciliation(historical)
+    assert records.load().reconciliations[-1].result == "safe_to_retry"
+    assert records.load().reconciliations[-1].retry_eligible is False
+    assert base.snapshot() == before
+
+
+def test_observed_absent_after_prior_attempt_does_not_enable_dispatch(tmp_path):
+    p = proposal()
+    flow = workflow(tmp_path, p)
+    decision = flow.decide(p, now=NOW)
+    flow.records.append_attempt(EffectAttempt(
+        attempt_id="attempt-prior",
+        effect_id=decision.effect_id,
+        decision_id=decision.decision_id,
+        started_at=NOW.isoformat(),
+        status="unknown",
+    ))
+    before = flow.destination.snapshot()
+    with pytest.raises(PermissionError, match="observed absence does not establish retry eligibility"):
+        flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot() == before
+    latest = flow.records.load().reconciliations[-1]
+    assert latest.result == "observed_absent"
+    assert latest.retry_eligible is False
+
+
+def test_missing_observation_policy_blocks_initial_dispatch(tmp_path):
+    p = proposal()
+    resolver = resolver_for(p)
+    destination = LocalRefundDestination(tmp_path / "destination.json")
+    flow = BoundedAuthorizationWorkflow(
+        manifest=manifest(),
+        resolver=resolver,
+        destination=destination,
+        records=BoundedRecordStore(tmp_path / "run.json", "missing-policy"),
+    )
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+    before = destination.snapshot()
+    with pytest.raises(PermissionError, match="destination observation is not valid"):
+        flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert destination.snapshot() == before
