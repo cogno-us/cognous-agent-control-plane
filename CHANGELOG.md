@@ -7,7 +7,8 @@
 - Explicit ObservationPolicy and timezone-aware evaluation time are required; missing, stale, malformed, timezone-free, excessive-future, unknown and unavailable observations fail closed.
 - Fresh absence is now represented as observed_absent with retry_eligible=false rather than being promoted to safe_to_retry.
 - Rejected observations remain attached to reconciliation evidence with reasons but are not added to accepted destination observations.
-- Execution validates its pre-dispatch observation and will not resubmit after any prior attempt merely because a fresh absence is observed.
+- Execution validates both pre-dispatch and post-dispatch observations; rejected post-dispatch evidence is retained in reconciliation records but is not added to accepted destination observations.
+- Execution preserves acknowledgement/attempt history independently from observation validity and will not resubmit after any prior attempt merely because a fresh absence is observed.
 - Historical safe_to_retry records remain parseable for reconstruction but do not become current retry permission.
 
 
