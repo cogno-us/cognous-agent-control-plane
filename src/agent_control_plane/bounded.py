@@ -507,25 +507,37 @@ class BoundedAuthorizationWorkflow:
 
         effect_id = persisted.effect_id
         existing = self.destination.observe(effect_id)
-        if existing.state in {"applied", "partial"}:
-            rec = ReconciliationResult(
-                effect_id=effect_id,
-                reconciled_at=_iso(now),
-                result="applied" if existing.state == "applied" else "hold",
-                observation=existing,
+        prior_attempts = [
+            item for item in self.records.load().attempts
+            if item.effect_id == effect_id
+        ]
+        if existing.state in {"applied", "partial"} or prior_attempts:
+            rec = self._reconcile_observation(effect_id, existing, now=now)
+            if rec.result == "applied":
+                attempt = EffectAttempt(
+                    attempt_id=str(uuid.uuid4()),
+                    effect_id=effect_id,
+                    decision_id=persisted.decision_id,
+                    started_at=_iso(now),
+                    status="acknowledged",
+                    acknowledgement={"reconciled_existing": True},
+                )
+                self.records.append_attempt(attempt)
+                return attempt, existing
+            if existing.state == "partial" and rec.observation_accepted:
+                attempt = EffectAttempt(
+                    attempt_id=str(uuid.uuid4()),
+                    effect_id=effect_id,
+                    decision_id=persisted.decision_id,
+                    started_at=_iso(now),
+                    status="partial",
+                    acknowledgement={"reconciled_existing": True},
+                )
+                self.records.append_attempt(attempt)
+                return attempt, existing
+            raise PermissionError(
+                "prior effect attempt cannot be resubmitted without explicit retry eligibility"
             )
-            self.records.append_observation(existing)
-            self.records.append_reconciliation(rec)
-            attempt = EffectAttempt(
-                attempt_id=str(uuid.uuid4()),
-                effect_id=effect_id,
-                decision_id=persisted.decision_id,
-                started_at=_iso(now),
-                status="acknowledged" if existing.state == "applied" else "partial",
-                acknowledgement={"reconciled_existing": True},
-            )
-            self.records.append_attempt(attempt)
-            return attempt, existing
 
         attempt = EffectAttempt(
             attempt_id=str(uuid.uuid4()),
@@ -570,29 +582,15 @@ class BoundedAuthorizationWorkflow:
         *,
         now: datetime | None = None,
     ) -> ReconciliationResult:
-        """Classify one observation without renewing authority or dispatching an effect.
-
-        A fresh matching absence is recorded as observed_absent only. It is not
-        retry permission because freshness alone cannot prove that a prior
-        dispatch will not commit later. The legacy safe_to_retry value stays
-        parseable for historical records but is not emitted by this method.
-        """
-        reasons: list[str] = []
-        evaluation_time: datetime | None = None
-        if now is None:
-            reasons.append("evaluation_time_missing")
-        elif now.tzinfo is None or now.utcoffset() is None:
-            reasons.append("evaluation_time_timezone_missing")
-        else:
-            evaluation_time = now.astimezone(timezone.utc)
-
-        policy = self.observation_policy
-        if policy is None:
-            reasons.append("observation_policy_missing")
-
+        """Classify one observation without renewing authority or dispatching an effect."""
         try:
             observation = self.destination.observe(effect_id)
         except Exception as exc:
+            reasons = []
+            evaluation_time = self._trusted_evaluation_time(now, reasons)
+            policy = self.observation_policy
+            if policy is None:
+                reasons.append("observation_policy_missing")
             value = ReconciliationResult(
                 effect_id=effect_id,
                 reconciled_at=_iso(_now()),
@@ -607,6 +605,33 @@ class BoundedAuthorizationWorkflow:
             )
             self.records.append_reconciliation(value)
             return value
+        return self._reconcile_observation(effect_id, observation, now=now)
+
+    def _trusted_evaluation_time(
+        self,
+        now: datetime | None,
+        reasons: list[str],
+    ) -> datetime | None:
+        if now is None:
+            reasons.append("evaluation_time_missing")
+            return None
+        if now.tzinfo is None or now.utcoffset() is None:
+            reasons.append("evaluation_time_timezone_missing")
+            return None
+        return now.astimezone(timezone.utc)
+
+    def _reconcile_observation(
+        self,
+        effect_id: str,
+        observation: EffectObservation,
+        *,
+        now: datetime | None,
+    ) -> ReconciliationResult:
+        reasons: list[str] = []
+        evaluation_time = self._trusted_evaluation_time(now, reasons)
+        policy = self.observation_policy
+        if policy is None:
+            reasons.append("observation_policy_missing")
 
         if observation.effect_id != effect_id:
             reasons.append("observation_effect_id_mismatch")
