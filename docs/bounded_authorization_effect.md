@@ -276,3 +276,26 @@ Downstream consumers must not map observed_absent to dispatch. They should prese
 the reconciliation result as evidence and keep authorization/retry decisions in
 their own explicit contract until a destination-specific retry-safety mechanism is
 implemented and qualified.
+
+
+### Post-dispatch observation validity
+
+Execution acknowledgement and destination observation are separate facts. After
+an adapter apply attempt, execute() routes the post-dispatch observation through
+the same identity, timestamp, policy and contradiction checks used by reconcile().
+
+A successful adapter acknowledgement remains recorded in EffectAttempt even when
+the subsequent observation is invalid or unavailable. The rejected observation
+or observation-channel exception is retained in ReconciliationResult with explicit
+reasons and observation_accepted=false. It is not appended to the accepted
+observations collection.
+
+For API callers, execute() now returns `EffectObservation | None` as its second
+tuple value. `None` means no validated destination observation was established
+for that post-dispatch read; it does not mean the effect was rolled back, absent,
+or safe to repeat. Callers must inspect the attempt record and reconciliation
+evidence separately.
+
+A later recovery may accept a fresh matching applied observation and suppress
+duplicate execution. Invalid or unavailable post-dispatch evidence never grants
+permission to replay the effect.
