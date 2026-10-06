@@ -228,11 +228,21 @@ class EffectObservation(BaseModel):
     destination_state: dict = Field(default_factory=dict)
 
 
+class ObservationPolicy(BaseModel):
+    """Required temporal policy for accepting destination observations."""
+
+    max_age_seconds: int = Field(gt=0)
+    clock_tolerance_seconds: int = Field(default=5, ge=0)
+
+
 class ReconciliationResult(BaseModel):
     effect_id: str
     reconciled_at: str
-    result: Literal["applied", "safe_to_retry", "hold"]
-    observation: EffectObservation
+    result: Literal["applied", "observed_absent", "safe_to_retry", "hold"]
+    observation: EffectObservation | None = None
+    observation_accepted: bool = False
+    retry_eligible: bool = False
+    reasons: list[str] = Field(default_factory=list)
 
 
 class BoundedRunRecord(BaseModel):
@@ -433,6 +443,7 @@ class BoundedAuthorizationWorkflow:
         mandate_max_age_seconds: int = 60,
         approval_max_age_seconds: int = 60,
         clock_tolerance_seconds: int = 5,
+        observation_policy: ObservationPolicy | None = None,
     ):
         self.manifest = copy.deepcopy(manifest)
         self.resolver = resolver
@@ -443,6 +454,7 @@ class BoundedAuthorizationWorkflow:
         self.mandate_max_age_seconds = mandate_max_age_seconds
         self.approval_max_age_seconds = approval_max_age_seconds
         self.clock_tolerance_seconds = clock_tolerance_seconds
+        self.observation_policy = observation_policy.model_copy(deep=True) if observation_policy else None
 
     def decide(self, proposal: RuntimeProposal, *, now: datetime | None = None) -> RuntimeDecision:
         now = now or _now()
@@ -549,18 +561,113 @@ class BoundedAuthorizationWorkflow:
         self.records.append_observation(observation)
         return attempt, observation
 
-    def reconcile(self, effect_id: str) -> ReconciliationResult:
-        observation = self.destination.observe(effect_id)
-        result = "applied" if observation.state == "applied" else (
-            "safe_to_retry" if observation.state == "absent" else "hold"
-        )
+    def reconcile(
+        self,
+        effect_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> ReconciliationResult:
+        """Classify one observation without renewing authority or dispatching an effect.
+
+        New runtime reconciliation distinguishes a fresh point-in-time absence from
+        retry eligibility. The legacy safe_to_retry value remains parseable for
+        historical records but is not emitted by this method.
+        """
+        reasons: list[str] = []
+        evaluation_time = now
+        if evaluation_time is None:
+            reasons.append("evaluation_time_missing")
+        elif evaluation_time.tzinfo is None or evaluation_time.utcoffset() is None:
+            reasons.append("evaluation_time_timezone_missing")
+        else:
+            evaluation_time = evaluation_time.astimezone(timezone.utc)
+
+        if self.observation_policy is None:
+            reasons.append("observation_policy_missing")
+
+        try:
+            observation = self.destination.observe(effect_id)
+        except Exception as exc:
+            value = ReconciliationResult(
+                effect_id=effect_id,
+                reconciled_at=_iso(evaluation_time or _now()),
+                result="hold",
+                observation=None,
+                observation_accepted=False,
+                retry_eligible=False,
+                reasons=sorted(set(reasons + [f"observation_unavailable:{type(exc).__name__}"])),
+            )
+            self.records.append_reconciliation(value)
+            return value
+
+        if observation.effect_id != effect_id:
+            reasons.append("observation_effect_id_mismatch")
+
+        observed_at: datetime | None = None
+        raw_time = observation.observed_at
+        if not isinstance(raw_time, str) or not raw_time.strip():
+            reasons.append("observation_time_missing")
+        else:
+            try:
+                observed_at = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                reasons.append("observation_time_malformed")
+            else:
+                if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                    reasons.append("observation_time_timezone_missing")
+                    observed_at = None
+                else:
+                    observed_at = observed_at.astimezone(timezone.utc)
+
+        if (
+            observed_at is not None
+            and evaluation_time is not None
+            and evaluation_time.tzinfo is not None
+            and self.observation_policy is not None
+        ):
+            future_limit = evaluation_time + timedelta(
+                seconds=self.observation_policy.clock_tolerance_seconds
+            )
+            if observed_at > future_limit:
+                reasons.append("observation_time_future")
+            elif (evaluation_time - observed_at).total_seconds() > self.observation_policy.max_age_seconds:
+                reasons.append("observation_stale")
+
+        if observation.state in {"applied", "partial"}:
+            destination_effect_id = observation.destination_state.get("effect_id")
+            destination_state = observation.destination_state.get("state")
+            if destination_effect_id != effect_id:
+                reasons.append("destination_effect_id_mismatch")
+            if destination_state != observation.state:
+                reasons.append("destination_state_contradiction")
+        elif observation.state == "absent":
+            if observation.destination_state:
+                reasons.append("absence_has_destination_state")
+        else:
+            reasons.append("observation_state_unknown")
+
+        accepted = not reasons
+        if accepted:
+            self.records.append_observation(observation)
+
+        if not accepted:
+            result = "hold"
+        elif observation.state == "applied":
+            result = "applied"
+        elif observation.state == "absent":
+            result = "observed_absent"
+        else:
+            result = "hold"
+
         value = ReconciliationResult(
             effect_id=effect_id,
-            reconciled_at=_iso(_now()),
+            reconciled_at=_iso(evaluation_time or _now()),
             result=result,
             observation=observation,
+            observation_accepted=accepted,
+            retry_eligible=False,
+            reasons=sorted(set(reasons)),
         )
-        self.records.append_observation(observation)
         self.records.append_reconciliation(value)
         return value
 
