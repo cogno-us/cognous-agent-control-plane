@@ -1045,3 +1045,185 @@ def test_missing_observation_policy_blocks_initial_dispatch(tmp_path):
     with pytest.raises(PermissionError, match="destination observation is not valid"):
         flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
     assert destination.snapshot() == before
+
+
+class PostDispatchObservationFault:
+    """Delegate real effects; inject exactly one post-dispatch observation fault."""
+
+    def __init__(self, base, *, observation=None, error=None):
+        self.base = base
+        self.observation = observation
+        self.error = error
+        self.observe_calls = 0
+
+    def observe(self, effect_id):
+        self.observe_calls += 1
+        if self.observe_calls == 1:
+            return self.base.observe(effect_id)
+        if self.observe_calls == 2:
+            if self.error is not None:
+                raise self.error
+            return self.observation.model_copy(deep=True)
+        return self.base.observe(effect_id)
+
+    def apply(self, **kwargs):
+        return self.base.apply(**kwargs)
+
+    def snapshot(self):
+        return self.base.snapshot()
+
+
+def post_dispatch_fault_workflow(tmp_path, fault_observation=None, *, error=None):
+    p = proposal()
+    resolver = resolver_for(p)
+    base = LocalRefundDestination(tmp_path / "destination.json")
+    records = BoundedRecordStore(tmp_path / "run.json", "post-dispatch")
+    destination = PostDispatchObservationFault(
+        base,
+        observation=fault_observation,
+        error=error,
+    )
+    flow = BoundedAuthorizationWorkflow(
+        manifest=manifest(),
+        resolver=resolver,
+        destination=destination,
+        records=records,
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
+    )
+    return p, base, records, flow
+
+
+@pytest.mark.parametrize(
+    ("fault", "reason"),
+    [
+        (
+            EffectObservation(
+                effect_id="WRONG-EFFECT",
+                observed_at=NOW.isoformat(),
+                state="applied",
+                destination_state={"effect_id": "WRONG-EFFECT", "state": "applied"},
+            ),
+            "observation_effect_id_mismatch",
+        ),
+        (
+            EffectObservation(
+                effect_id="placeholder",
+                observed_at="2000-01-01T00:00:00+00:00",
+                state="applied",
+                destination_state={"effect_id": "placeholder", "state": "applied"},
+            ),
+            "observation_stale",
+        ),
+        (
+            EffectObservation(
+                effect_id="placeholder",
+                observed_at="malformed",
+                state="applied",
+                destination_state={"effect_id": "placeholder", "state": "applied"},
+            ),
+            "observation_time_malformed",
+        ),
+        (
+            EffectObservation(
+                effect_id="placeholder",
+                observed_at=NOW.isoformat(),
+                state="applied",
+                destination_state={"effect_id": "placeholder", "state": "partial"},
+            ),
+            "destination_state_contradiction",
+        ),
+    ],
+)
+def test_execute_rejects_invalid_post_dispatch_observation_without_replacing_effect(
+    tmp_path, fault, reason
+):
+    p = proposal()
+    # Bind placeholder fields to the actual effect only after authorization.
+    resolver = resolver_for(p)
+    base = LocalRefundDestination(tmp_path / "destination.json")
+    records = BoundedRecordStore(tmp_path / "run.json", "post-dispatch")
+    destination = PostDispatchObservationFault(base, observation=fault)
+    flow = BoundedAuthorizationWorkflow(
+        manifest=manifest(),
+        resolver=resolver,
+        destination=destination,
+        records=records,
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
+    )
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+    if fault.effect_id == "placeholder":
+        fault.effect_id = decision.effect_id
+        fault.destination_state["effect_id"] = decision.effect_id
+
+    attempt, observed = flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert attempt.status == "acknowledged"
+    assert attempt.acknowledgement["effect"]["effect_id"] == decision.effect_id
+    assert observed is None
+
+    state_after_dispatch = base.snapshot()
+    assert len(state_after_dispatch["effects"]) == 1
+    assert decision.effect_id in state_after_dispatch["effects"]
+
+    record = records.load()
+    rejected = record.reconciliations[-1]
+    assert rejected.result == "hold"
+    assert rejected.observation_accepted is False
+    assert reason in rejected.reasons
+    assert rejected.observation is not None
+    # Only the genuine pre-dispatch absence is accepted as destination evidence.
+    assert len(record.observations) == 1
+    assert record.observations[0].state == "absent"
+
+    recovery_attempt, recovery_observation = flow.execute(
+        p, decision, adapter_id=p.adapter_id, now=NOW
+    )
+    assert recovery_attempt.status == "acknowledged"
+    assert recovery_attempt.acknowledgement["reconciled_existing"] is True
+    assert recovery_observation is not None
+    assert recovery_observation.effect_id == decision.effect_id
+    assert recovery_observation.state == "applied"
+    assert base.snapshot() == state_after_dispatch
+
+
+def test_execute_retains_unavailable_post_dispatch_observation_without_repeating_effect(tmp_path):
+    p = proposal()
+    resolver = resolver_for(p)
+    base = LocalRefundDestination(tmp_path / "destination.json")
+    records = BoundedRecordStore(tmp_path / "run.json", "post-dispatch-unavailable")
+    destination = PostDispatchObservationFault(
+        base,
+        error=OSError("post-dispatch observation unavailable"),
+    )
+    flow = BoundedAuthorizationWorkflow(
+        manifest=manifest(),
+        resolver=resolver,
+        destination=destination,
+        records=records,
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
+    )
+    decision = flow.decide(p, now=NOW)
+
+    attempt, observed = flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert attempt.status == "acknowledged"
+    assert observed is None
+    state_after_dispatch = base.snapshot()
+    assert len(state_after_dispatch["effects"]) == 1
+
+    record = records.load()
+    rejected = record.reconciliations[-1]
+    assert rejected.result == "hold"
+    assert rejected.observation is None
+    assert rejected.observation_accepted is False
+    assert "observation_unavailable:OSError" in rejected.reasons
+    assert len(record.observations) == 1
+    assert record.observations[0].state == "absent"
+
+    recovery_attempt, recovery_observation = flow.execute(
+        p, decision, adapter_id=p.adapter_id, now=NOW
+    )
+    assert recovery_attempt.status == "acknowledged"
+    assert recovery_attempt.acknowledgement["reconciled_existing"] is True
+    assert recovery_observation is not None
+    assert recovery_observation.state == "applied"
+    assert base.snapshot() == state_after_dispatch
