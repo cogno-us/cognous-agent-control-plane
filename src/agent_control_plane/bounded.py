@@ -223,7 +223,7 @@ class EffectAttempt(BaseModel):
 
 class EffectObservation(BaseModel):
     effect_id: str
-    observed_at: str
+    observed_at: str | None = None
     state: Literal["absent", "applied", "partial", "unknown"]
     destination_state: dict = Field(default_factory=dict)
 
@@ -243,6 +243,9 @@ class ReconciliationResult(BaseModel):
     observation_accepted: bool = False
     retry_eligible: bool = False
     reasons: list[str] = Field(default_factory=list)
+    evaluation_time: str | None = None
+    observation_max_age_seconds: int | None = None
+    observation_clock_tolerance_seconds: int | None = None
 
 
 class BoundedRunRecord(BaseModel):
@@ -569,20 +572,22 @@ class BoundedAuthorizationWorkflow:
     ) -> ReconciliationResult:
         """Classify one observation without renewing authority or dispatching an effect.
 
-        New runtime reconciliation distinguishes a fresh point-in-time absence from
-        retry eligibility. The legacy safe_to_retry value remains parseable for
-        historical records but is not emitted by this method.
+        A fresh matching absence is recorded as observed_absent only. It is not
+        retry permission because freshness alone cannot prove that a prior
+        dispatch will not commit later. The legacy safe_to_retry value stays
+        parseable for historical records but is not emitted by this method.
         """
         reasons: list[str] = []
-        evaluation_time = now
-        if evaluation_time is None:
+        evaluation_time: datetime | None = None
+        if now is None:
             reasons.append("evaluation_time_missing")
-        elif evaluation_time.tzinfo is None or evaluation_time.utcoffset() is None:
+        elif now.tzinfo is None or now.utcoffset() is None:
             reasons.append("evaluation_time_timezone_missing")
         else:
-            evaluation_time = evaluation_time.astimezone(timezone.utc)
+            evaluation_time = now.astimezone(timezone.utc)
 
-        if self.observation_policy is None:
+        policy = self.observation_policy
+        if policy is None:
             reasons.append("observation_policy_missing")
 
         try:
@@ -590,12 +595,15 @@ class BoundedAuthorizationWorkflow:
         except Exception as exc:
             value = ReconciliationResult(
                 effect_id=effect_id,
-                reconciled_at=_iso(evaluation_time or _now()),
+                reconciled_at=_iso(_now()),
                 result="hold",
                 observation=None,
                 observation_accepted=False,
                 retry_eligible=False,
                 reasons=sorted(set(reasons + [f"observation_unavailable:{type(exc).__name__}"])),
+                evaluation_time=_iso(evaluation_time) if evaluation_time else None,
+                observation_max_age_seconds=policy.max_age_seconds if policy else None,
+                observation_clock_tolerance_seconds=policy.clock_tolerance_seconds if policy else None,
             )
             self.records.append_reconciliation(value)
             return value
@@ -603,8 +611,8 @@ class BoundedAuthorizationWorkflow:
         if observation.effect_id != effect_id:
             reasons.append("observation_effect_id_mismatch")
 
-        observed_at: datetime | None = None
         raw_time = observation.observed_at
+        observed_at: datetime | None = None
         if not isinstance(raw_time, str) or not raw_time.strip():
             reasons.append("observation_time_missing")
         else:
@@ -619,18 +627,11 @@ class BoundedAuthorizationWorkflow:
                 else:
                     observed_at = observed_at.astimezone(timezone.utc)
 
-        if (
-            observed_at is not None
-            and evaluation_time is not None
-            and evaluation_time.tzinfo is not None
-            and self.observation_policy is not None
-        ):
-            future_limit = evaluation_time + timedelta(
-                seconds=self.observation_policy.clock_tolerance_seconds
-            )
+        if observed_at is not None and evaluation_time is not None and policy is not None:
+            future_limit = evaluation_time + timedelta(seconds=policy.clock_tolerance_seconds)
             if observed_at > future_limit:
                 reasons.append("observation_time_future")
-            elif (evaluation_time - observed_at).total_seconds() > self.observation_policy.max_age_seconds:
+            elif (evaluation_time - observed_at).total_seconds() > policy.max_age_seconds:
                 reasons.append("observation_stale")
 
         if observation.state in {"applied", "partial"}:
@@ -661,12 +662,15 @@ class BoundedAuthorizationWorkflow:
 
         value = ReconciliationResult(
             effect_id=effect_id,
-            reconciled_at=_iso(evaluation_time or _now()),
+            reconciled_at=_iso(_now()),
             result=result,
             observation=observation,
             observation_accepted=accepted,
             retry_eligible=False,
             reasons=sorted(set(reasons)),
+            evaluation_time=_iso(evaluation_time) if evaluation_time else None,
+            observation_max_age_seconds=policy.max_age_seconds if policy else None,
+            observation_clock_tolerance_seconds=policy.clock_tolerance_seconds if policy else None,
         )
         self.records.append_reconciliation(value)
         return value
