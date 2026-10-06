@@ -19,6 +19,7 @@ from agent_control_plane.bounded import (
     IdentityStatus,
     LocalRefundDestination,
     MandateStatus,
+    ObservationPolicy,
     PolicyStatus,
     RoleMappingStatus,
     RuntimeProposal,
@@ -27,6 +28,13 @@ from agent_control_plane.bounded import (
 )
 
 NOW = datetime(2026, 10, 5, 19, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_synthetic_clock(monkeypatch):
+    import agent_control_plane.bounded as bounded_module
+    monkeypatch.setattr(bounded_module, "_now", lambda: NOW)
+
 PROFILE = "urn:cognous:alvorada:public-stack-profile:0.1.0"
 INSTITUTION = "urn:cognous:institution:synthetic-customer-service"
 ACTOR = "urn:cognous:identity:refund-agent-1"
@@ -333,6 +341,7 @@ def workflow(tmp_path, p, *, tier="T1", resolver=None):
         resolver=resolver,
         destination=LocalRefundDestination(tmp_path / "destination.json"),
         records=BoundedRecordStore(tmp_path / "run.json", "run-1"),
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
     )
 
 
@@ -646,8 +655,9 @@ def test_lost_ack_restart_reconciles_without_duplicate(tmp_path):
         resolver=r,
         destination=LocalRefundDestination(tmp_path / "destination.json"),
         records=BoundedRecordStore(tmp_path / "run.json", "run-1"),
+        observation_policy=ObservationPolicy(max_age_seconds=300, clock_tolerance_seconds=5),
     )
-    assert restarted.reconcile(decision.effect_id).result == "applied"
+    assert restarted.reconcile(decision.effect_id, now=NOW).result == "applied"
     retry, observed2 = restarted.execute(
         p, decision, adapter_id=p.adapter_id, now=NOW
     )
@@ -667,7 +677,7 @@ def test_partial_delivery_holds_instead_of_blind_retry(tmp_path):
     )
     assert attempt.status == "partial"
     assert observed.state == "partial"
-    assert flow.reconcile(decision.effect_id).result == "hold"
+    assert flow.reconcile(decision.effect_id, now=NOW).result == "hold"
     retry, observed2 = flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
     assert retry.status == "partial"
     assert observed2.state == "partial"
