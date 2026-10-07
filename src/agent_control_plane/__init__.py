@@ -2,6 +2,7 @@ from agent_control_plane.local_authority_effect import (
     LOCAL_AUTHORITY_EFFECT_PROFILE,
     LocalExecutionClaim,
     materialize_local_execution_claim,
+    provision_local_execution_claim,
     verify_local_execution_claim,
 )
 from agent_control_plane.bounded import (
@@ -72,6 +73,7 @@ __all__ = [
     "LOCAL_AUTHORITY_EFFECT_PROFILE",
     "LocalExecutionClaim",
     "materialize_local_execution_claim",
+    "provision_local_execution_claim",
     "verify_local_execution_claim",
     "ObservationPolicy",
     "RoleMappingStatus",
