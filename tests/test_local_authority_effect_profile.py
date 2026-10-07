@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from agent_control_plane.bounded import (
     ApprovalStatus,
     BoundedAuthorizationWorkflow,
@@ -25,6 +27,7 @@ from agent_control_plane.bounded import (
 from agent_control_plane.local_authority_effect import (
     LOCAL_AUTHORITY_EFFECT_PROFILE,
     materialize_local_execution_claim,
+    provision_local_execution_claim,
     verify_local_execution_claim,
 )
 
@@ -252,3 +255,84 @@ def test_requested_expiry_cannot_extend_grant(tmp_path):
         flow, proposal, decision, now=NOW, expires_at=requested
     )
     assert datetime.fromisoformat(claim.expires_at) == NOW + timedelta(hours=1)
+
+
+class InterleavingSnapshotResolver(SyntheticResolver):
+    """Inject one invalidating change after _resolve but before snapshot return."""
+
+    def __init__(self, *args, mutate_kind: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mutate_kind = mutate_kind
+        self.injected = False
+
+    def authority_effect_snapshot(self, ref: str):
+        if not self.injected:
+            self.injected = True
+            if self.mutate_kind == "approval":
+                self.approvals[APPROVAL] = self.approvals[APPROVAL].model_copy(
+                    update={"status": "revoked"}
+                )
+            elif self.mutate_kind == "policy":
+                self.policies[POLICY] = self.policies[POLICY].model_copy(
+                    update={"status": "superseded"}
+                )
+            else:
+                raise AssertionError(self.mutate_kind)
+        return super().authority_effect_snapshot(ref)
+
+
+def _replace_resolver(flow, resolver):
+    flow.resolver = resolver
+    return flow
+
+
+@pytest.mark.parametrize(
+    ("kind", "message"),
+    [
+        ("approval", "approval projection is not active"),
+        ("policy", "policy projection is not active"),
+    ],
+)
+def test_invalidation_between_resolve_and_snapshot_cannot_enter_claim(tmp_path, kind, message):
+    proposal, base, flow, decision = setup(tmp_path)
+    resolver = InterleavingSnapshotResolver(
+        contexts=copy.deepcopy(base.contexts),
+        statuses=copy.deepcopy(base.statuses),
+        identities=copy.deepcopy(base.identities),
+        mandates=copy.deepcopy(base.mandates),
+        approvals=copy.deepcopy(base.approvals),
+        policies=copy.deepcopy(base.policies),
+        conflicts=copy.deepcopy(base.conflicts),
+        evidence=copy.deepcopy(base.evidence),
+        role_mappings=copy.deepcopy(base.role_mappings),
+        mutate_kind=kind,
+    )
+    _replace_resolver(flow, resolver)
+    with pytest.raises(PermissionError, match=message):
+        provision_local_execution_claim(
+            flow,
+            proposal,
+            decision,
+            now=NOW,
+            provision=lambda claim: (_ for _ in ()).throw(
+                AssertionError("invalid claim reached provisioning sink")
+            ),
+        )
+
+
+def test_provisioning_occurs_inside_trusted_authority_handoff(tmp_path):
+    proposal, resolver, flow, decision = setup(tmp_path)
+    observed = {}
+
+    def sink(claim):
+        # RLock is held by this thread throughout final resolve/snapshot/provision.
+        owned = getattr(resolver._authority_effect_lock, "_is_owned", lambda: False)()
+        observed["lock_owned"] = owned
+        observed["claim"] = claim
+
+    claim = provision_local_execution_claim(
+        flow, proposal, decision, now=NOW, provision=sink, claim_id="handoff-claim"
+    )
+    assert observed["lock_owned"] is True
+    assert observed["claim"] == claim
+    assert claim.claim_id == "handoff-claim"
