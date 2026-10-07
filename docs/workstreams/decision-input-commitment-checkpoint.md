@@ -1,124 +1,191 @@
 # Worker 20 — decision-input commitment profile checkpoint
 
-Status: **proposal complete on isolated branch; runtime adoption deferred; do not merge as an enforcement claim**.
+Status: **PR #11 hardened; proposal remains non-authorizing; adoption deferred; do not merge as an enforcement claim**.
 
 Branch: `worker20/decision-input-commitment-profile`.
 
 ## Reviewed revisions
 
-Primary Control Plane main / branch base reviewed: `248d899634d9db3518e831bc7ab568a48733f825`.
+Original branch base / selected Control Plane revision: `248d899634d9db3518e831bc7ab568a48733f825`.
 
-Consumers / integration state reviewed:
+Consumer / hub revisions previously reviewed and unchanged by this hardening pass:
 
-- Replay Bundle main: `043830b56595cecddfa65c064afd1c0b95e64792`.
-- Governance Evidence Pack main: `de6b9e071df49fc3e0c1254d39b5c94cced554f0`.
-- Open Control Stack main / lock reviewed: `5737267d94d2b445735c95e8480a31de73a2abe8`.
-- Hub-selected Control Plane: `248d899634d9db3518e831bc7ab568a48733f825`.
-- Hub-selected Replay: `043830b56595cecddfa65c064afd1c0b95e64792`.
-- Hub-selected Evidence Pack: `de6b9e071df49fc3e0c1254d39b5c94cced554f0`.
-- Hub-selected Manifest: `46c950bed37fe3812000895430bc0312d29e37ce`.
-- Hub-selected executor: `177354e959cc78c59c1a776f018cfbfbf28c927b`.
-- Hub-selected Alvorada/GAX: `9984d9011568ccdf3d562fa9760ad41368947b34`.
+- Replay Bundle: `043830b56595cecddfa65c064afd1c0b95e64792`.
+- Governance Evidence Pack: `de6b9e071df49fc3e0c1254d39b5c94cced554f0`.
+- Open Control Stack lock reviewed at `5737267d94d2b445735c95e8480a31de73a2abe8`.
+- Manifest: `46c950bed37fe3812000895430bc0312d29e37ce`.
+- Executor: `177354e959cc78c59c1a776f018cfbfbf28c927b`.
+- Alvorada/GAX: `9984d9011568ccdf3d562fa9760ad41368947b34`.
 
-Open PR review at branch creation:
+No dependency pin was advanced. No Replay, Evidence Pack, hub, Worker 19, refund-intent-registry, live runtime schema, or authorization-path file was modified.
 
-- Control Plane: none.
-- Replay: PRs #5 and #6 remained open; neither was consumed.
-- Governance Evidence Pack: PRs #5 and #6 remained open; neither was consumed.
-- Hub: none.
+## Review findings reproduced
 
-Repository `CONTRIBUTING.md`, current README, bounded authorization/effect contract, current models/tests, consumer importer/model code, and hub `component-lock.json` were inspected before editing.
+The pre-hardening verifier permitted or mishandled five classes:
 
-## Research input
+1. **Source mismatch** — an evidence item naming an obligation could use a different `source_ref`; classification did not enforce the obligation's admissible source.
+2. **Future-dated evidence** — freshness calculation could treat an observation after `evaluation_time` as current because a negative age did not exceed `max_age_seconds`.
+3. **Resolver/obligation semantics mismatch** — resolver semantics were committed, and obligation semantics were committed, but the verifier did not require them to denote the same supported implementation.
+4. **Malformed freshness bounds** — non-integer/negative values could bypass or ambiguously affect classification because the classifier conditionally interpreted only non-negative integers.
+5. **Non-boolean required flags** — only `required is True` triggered required-evidence enforcement, so other truthy representations were not rejected structurally.
 
-Reviewed: *From Intent to Execution Grant: An Execution-Boundary Conformance Profile for High-Risk AI Actions* (arXiv:2609.11596v1, 10 Sep 2026).
+These were semantic validation defects in the proposed standalone profile, not findings against the current live `BoundedAuthorizationWorkflow`.
 
-Used as research input only. No EBL conformance claim is made and no EBL object naming was inserted into the live runtime.
+## Hardening changes
 
-Findings carried into this proposal:
+### Field validation before classification
 
-- a version label alone is not policy-content/evaluation-semantics identity;
-- evidence must be related to explicit obligations, and complete materialized evidence must be committed if later verification is expected;
-- decision evaluation should be closed over explicit candidate, policy, evidence, context and time inputs;
-- obligation origin/resolution semantics must survive operational-policy changes;
-- a compatible or "stricter" operational-policy update does not silently preserve an earlier allow/grant;
-- derivation/replay consistency is not external truth verification;
-- validation, permission consumption and protected effect are a separate execution-boundary/linearization problem owned by Worker 19.
+Obligations now require:
 
-## Verified observations against current Cognous code
+- non-empty string IDs, policy origin, source ref and resolver-semantics ID;
+- `required` of exact boolean type;
+- `max_age_seconds` of exact integer type, non-negative and not boolean;
+- SHA-256 resolver-semantics commitment;
+- an existing policy origin.
 
-1. **PolicyStatus gap confirmed.** `PolicyStatus` currently binds `ref`, `version`, `status`, `observed_at`, institution and domain. It does not bind policy contents or policy evaluation semantics.
-2. **EvidenceStatus gap confirmed.** `EvidenceStatus` currently binds obligation ID, state, observation time, source ref, institution and domain. It does not commit the materialized evidence content or provenance.
-3. **Existing useful commitments confirmed.** Manifest, payload, full proposal, requirement and role-mapping commitments already provide meaningful bindings and are reused conceptually rather than replaced.
-4. **Replay independence limit confirmed.** Reconstruction semantics explicitly set `policy_reevaluation=false` and `independent_effect_verification=false`; importer checks record consistency and selected commitments but does not independently re-run institutional authorization.
-5. **Evidence Pack independence limit confirmed.** The importer distinguishes locally computed artifact hashes/semantic import checks from operational effectiveness, independent audit and independent real-world effect verification.
-6. **Canonical hashing limit confirmed.** Control Plane, Replay and Evidence Pack use sorted compact UTF-8 Python JSON with NaN rejected. No current evidence establishes cross-language equivalence or Unicode/numeric normalization beyond that behavior.
+Evidence items now require:
 
-## Delivered proposal
+- non-empty evidence/source IDs;
+- non-empty duplicate-free string `obligation_ids`;
+- only known obligations;
+- declared state in `current | unknown | conflict`;
+- timezone-aware parseable `observed_at`;
+- provenance object with source matching the evidence source;
+- evidence source matching every obligation's admissible source exactly.
 
-New files only:
+Classification runs only after those validations pass.
 
-- `docs/decision-input-commitment-profile.md`
+### Future-time rule
+
+The proposed classifier has **zero future tolerance**:
+
+`observed_at > evaluation_time => EVIDENCE_TIME_FUTURE`.
+
+Future-dated evidence is rejected before freshness classification and cannot become `VALID`.
+
+A future profile that permits clock skew must use separately named/versioned semantics; this verifier will not infer tolerance.
+
+### Resolver / obligation semantics
+
+The standalone verifier now supports exactly:
+
+- semantics ID: `urn:cognous:resolver:required-evidence-v1`;
+- classifier: `exact-source-current-with-max-age`;
+- version: `1`;
+- admissible-source rule: `exact-match`;
+- future-observation rule: `reject`;
+- status precedence: `CONFLICT, UNKNOWN, STALE, MISSING, VALID`.
+
+The resolver declaration must exactly match this supported semantics object and its commitment.
+
+Every obligation must bind both the supported semantics ID and the resolver's exact semantics commitment.
+
+Unsupported resolver semantics fail with `UNSUPPORTED_RESOLVER_SEMANTICS`. An obligation/resolver mismatch fails with `OBLIGATION_RESOLVER_SEMANTICS_MISMATCH`.
+
+The verifier does not approximate unsupported semantics.
+
+## Negative-vector integrity discipline
+
+Focused review vectors recompute the affected component commitments plus the closed `decision.input_commitment` and top-level `record_commitment`.
+
+Where relevant, vectors also recompute:
+
+- evidence provenance commitments;
+- obligation commitments;
+- institutional requirement obligation references;
+- resolver semantics commitment.
+
+Therefore the expected failures are semantic:
+
+- `EVIDENCE_SOURCE_MISMATCH`;
+- `EVIDENCE_TIME_FUTURE`;
+- `OBLIGATION_RESOLVER_SEMANTICS_MISMATCH`;
+- `UNSUPPORTED_RESOLVER_SEMANTICS`;
+- `EVIDENCE_FRESHNESS_INVALID`;
+- `OBLIGATION_REQUIRED_INVALID`.
+
+They are not stale-hash failures.
+
+## Files changed in the hardening pass
+
+Only existing PR #11 files were changed:
+
 - `src/agent_control_plane/decision_input_profile.py`
-- `conformance/decision-input-commitment-vectors.json`
 - `tests/test_decision_input_commitment_profile.py`
-- `tools/verify_decision_input_commitment.py`
+- `conformance/decision-input-commitment-vectors.json`
+- `docs/decision-input-commitment-profile.md`
 - `docs/workstreams/decision-input-commitment-checkpoint.md`
 
-No live authorization file, producer schema, dependency pin, CI workflow, Worker 19 artifact, refund intent registry, or consumer repository was modified.
+The standalone CLI remains unchanged because it delegates to the hardened verifier.
 
-## Design choice
+## Focused test result
 
-The smallest compatible extension is a versioned **non-authorizing sidecar record**, not a new `RuntimeDecision` / `BoundedRunRecord` field. It binds exact candidate, institutional requirements, policy content/evaluation semantics, obligation origin, evidence content/provenance, context, explicit adjudication time, resolver/classification semantics, assurance class, decision-input commitment and reason precedence.
-
-This avoids changing the existing producer wire contract. A later Replay revision can map the sidecar into generic Reconstruction `SourceRecord` / `CommitmentRecord` structures, while a later Evidence Pack transformation can retain it with explicit provenance/verification limits.
-
-## Tests executed
-
-Local proposed-profile test command:
+Executed locally against the hardened profile/vector files:
 
 ```text
 pytest -q tests/test_decision_input_commitment_profile.py
 ```
 
-Outcome:
+Result:
 
 ```text
-16 passed in 0.05s
+25 passed in 0.06s
 ```
 
-Standalone verifier baseline check:
+The suite includes a dedicated assertion that every `review-*` vector has a recomputed closed decision-input commitment and top-level record commitment, plus affected obligation/provenance commitments where applicable.
 
-```text
-python tools/verify_decision_input_commitment.py <baseline-record.json>
-```
+## Repository CI
 
-Outcome:
+Repository GitHub Actions is expected to run on the updated PR head. The exact workflow run and outcome are recorded below after the final documentation commit:
 
-```json
-{"authorizing": false, "independent_external_truth_verified": false, "valid": true}
-```
+- workflow: **Tests**
+- result: **pending at checkpoint edit time**
 
-The full emitted verifier result also reported both required obligations as `VALID` and returned the expected baseline record commitment.
+Do not treat the local focused result as a substitute for repository CI.
 
-Coverage includes 13 record vectors plus canonicalization/malformed-value tests. The vector file is explicitly labeled `proposed-profile-tests` with `runtime_enforcement_claim=false` and `independent_external_truth_claim=false`.
+## Guarantees established by this PR
 
-These tests establish only the behavior of the standalone proposed verifier and vectors. They do not prove current Control Plane enforcement, EBL conformance, independent implementation equivalence, source authentication, evidence truth, complete mediation, permission-consumption atomicity, effect occurrence, or outcome correctness.
+Within the standalone proposed verifier only:
 
-## Deferred implementation work
+- exact source matching is enforced between evidence and every claimed obligation;
+- future-dated evidence is rejected;
+- freshness bounds and required flags are strictly typed before classification;
+- resolver semantics are both commitment-bound and implementation-bound;
+- each obligation must bind the same supported resolver semantics;
+- unsupported resolver semantics are explicitly rejected;
+- semantic negative vectors remain validly re-committed so failures exercise semantics rather than digest staleness.
 
-Deferred to a later runtime/consumer batch:
+## Guarantees not established
 
-- durable emission/storage of the sidecar tied atomically enough to the RuntimeDecision for the intended claim;
-- authenticated retrieval/materialization of policy contents, evaluation semantics, evidence contents and provenance;
-- adoption of a runtime primary-reason contract;
-- effect-time comparison / fresh re-adjudication using adopted decision-input commitments;
-- Replay revision-pinned importer support;
+This PR still does **not** establish:
+
+- adoption by the live authorization path;
+- atomicity between sidecar creation and `RuntimeDecision`;
+- authenticated production policy/evidence retrieval;
+- external evidence truth;
+- independent authorization recomputation;
+- cross-language canonicalization equivalence;
+- authority/grant consumption atomicity;
+- authority/effect linearization;
+- complete mediation;
+- destination finality;
+- effect occurrence or intended outcome;
+- EBL conformance.
+
+Worker 19 continues to own authority/effect race qualification.
+
+## Deferred adoption work
+
+Still deferred to later runtime/consumer PRs:
+
+- durable sidecar lifecycle and atomicity relative to runtime decisions;
+- production source authentication/materialization;
+- production clock/tolerance profile;
+- runtime reason mapping;
+- effect-time adopted commitment comparison / re-adjudication;
+- Replay importer support;
 - Evidence Pack transformation support;
-- cross-language canonicalization vectors/implementation before portability claims;
-- integration qualification and hub pin advancement;
-- authority/effect linearization and permission-consumption work owned by Worker 19.
+- independent/cross-language canonicalization work;
+- hub qualification and any pin advancement.
 
-## Claim boundary
-
-This branch proposes a contract and executable conformance vectors. It does **not** claim EBL conformance, production runtime enforcement, independent external truth verification, or that the sidecar itself carries authority.
+The sidecar remains proposal-only and non-authorizing.
