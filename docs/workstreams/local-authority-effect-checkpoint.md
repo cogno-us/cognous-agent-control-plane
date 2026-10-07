@@ -57,3 +57,16 @@ this checkpoint until CI is observed.
 
 No production identity, source authentication, distributed transaction,
 destination atomicity, complete mediation, EBL-Core conformance or hub adoption.
+
+
+## Hardened validation checkpoint
+
+At hardened head `6c7b49138134eeb0d6e37e1b99a36a49cc42218e`,
+Tests run `37639954501` completed successfully on Python 3.11 and 3.12.
+Python 3.12 reported **177 passed**, including **7** local authority/effect
+profile tests. Worker 20's merged non-authorizing profile tests are present in
+the PR merge test context but are not treated as execution authority.
+
+This result precedes this evidence-only checkpoint commit. The final PR head must
+be rerun separately; that final result is recorded in the PR review handoff
+without rewriting this historical checkpoint.
