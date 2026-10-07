@@ -136,12 +136,13 @@ The suite includes a dedicated assertion that every `review-*` vector has a reco
 
 ## Repository CI
 
-Repository GitHub Actions is expected to run on the updated PR head. The exact workflow run and outcome are recorded below after the final documentation commit:
+Repository GitHub Actions ran on hardened code/test head `db1a8e3ea48c84626b5d1dc546e3525392b8d173`:
 
 - workflow: **Tests**
-- result: **pending at checkpoint edit time**
+- run: **#113** (GitHub Actions run `37636534005`)
+- result: **success**
 
-Do not treat the local focused result as a substitute for repository CI.
+This checkpoint-result update is documentation-only; GitHub may create a subsequent workflow run for the new documentation head. The successful #113 run is the repository-CI result for the hardened verifier/vector/test implementation described above.
 
 ## Guarantees established by this PR
 
