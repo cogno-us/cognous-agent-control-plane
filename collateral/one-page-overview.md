@@ -1,4 +1,4 @@
-# Agent Control Plane — One-Page Overview
+# Cognous Control Plane — One-Page Overview
 
 ## Purpose
 
