@@ -72,7 +72,7 @@ Review original artifacts and their exact source revisions before extending a cl
 
 Worker 21 adds a proposed, opt-in claim contract for a same-host SQLite authority/effect boundary. The legacy bounded execution path is unchanged.
 
-The claim is materialized only from a persisted authorized decision plus a fresh trusted Control Plane resolution. It binds institution/domain, actor/principal, grant identity/revision, the fully materialized operation, approvals, policy state, evidence state, effect limits and a bounded validity interval. Possession is explicitly non-authorizing; a participating executor must provision and consume the claim in its own authoritative transaction.
+The enforceable profile uses an explicit trusted authority handoff, not merely another pre-effect check. While the authority source excludes its own invalidating writers, the Control Plane performs a final resolve, captures and validates one coherent active/current authority projection, and provisions the exact claim into the participating local store. Only then does that store become authoritative for later profile mutations. The claim binds institution/domain, actor/principal, grant identity/revision/status, the fully materialized operation, approvals, policy state, evidence state, effect limits and a bounded validity interval. Possession remains non-authorizing.
 
 See [docs/local-authority-effect-profile.md](docs/local-authority-effect-profile.md). This branch is implemented and tested as a proposal only; it is not yet merged or selected by the stack hub.
 
