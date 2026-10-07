@@ -15,6 +15,14 @@ from typing import Any
 PROFILE_VERSION = "0.1.0-proposed"
 CANONICALIZATION_PROFILE = "json-sort-keys-compact-utf8-no-nan-python-semantics-v0.1-proposed"
 COMMITMENT_ALGORITHM = "SHA-256"
+SUPPORTED_RESOLUTION_SEMANTICS_ID = "urn:cognous:resolver:required-evidence-v1"
+SUPPORTED_CLASSIFICATION_SEMANTICS = {
+    "classifier": "exact-source-current-with-max-age",
+    "version": "1",
+    "admissible_source": "exact-match",
+    "future_observation": "reject",
+    "precedence": ["CONFLICT", "UNKNOWN", "STALE", "MISSING", "VALID"],
+}
 
 REASON_PRECEDENCE = (
     "INPUT_INVALID",
@@ -33,6 +41,7 @@ ALLOWED_ASSURANCE_CLASSES = {
     "authenticated_source",
     "externally_verified_fact",
 }
+ALLOWED_EVIDENCE_STATES = {"current", "unknown", "conflict"}
 
 
 class ProfileValidationError(ValueError):
@@ -91,6 +100,12 @@ def _require_list(value: Any, path: str) -> list[Any]:
     return value
 
 
+def _require_nonempty_string(value: Any, path: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ProfileValidationError("INPUT_INVALID", f"{path} must be a non-empty string")
+    return value
+
+
 def _verify_named_commitment(container: dict[str, Any], value_key: str, commitment_key: str, code: str) -> None:
     if value_key not in container:
         raise ProfileValidationError("INPUT_INVALID", f"missing {value_key}")
@@ -114,20 +129,107 @@ def _obligation_semantic_payload(obligation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validate_obligation_fields(obligation: dict[str, Any]) -> None:
+    oid = _require_nonempty_string(obligation.get("obligation_id"), "evidence_obligations[].obligation_id")
+    _require_nonempty_string(obligation.get("policy_origin_ref"), f"obligation {oid}.policy_origin_ref")
+    _require_nonempty_string(obligation.get("policy_origin_version"), f"obligation {oid}.policy_origin_version")
+    if type(obligation.get("required")) is not bool:
+        raise ProfileValidationError("OBLIGATION_REQUIRED_INVALID", f"obligation {oid}.required must be boolean")
+    _require_nonempty_string(obligation.get("source_ref"), f"obligation {oid}.source_ref")
+    max_age = obligation.get("max_age_seconds")
+    if type(max_age) is not int or max_age < 0:
+        raise ProfileValidationError(
+            "EVIDENCE_FRESHNESS_INVALID",
+            f"obligation {oid}.max_age_seconds must be a non-negative integer",
+        )
+    _require_nonempty_string(obligation.get("resolution_semantics_id"), f"obligation {oid}.resolution_semantics_id")
+    semantics_commitment = obligation.get("resolution_semantics_commitment")
+    if not isinstance(semantics_commitment, str) or not semantics_commitment.startswith("sha256:"):
+        raise ProfileValidationError("INPUT_INVALID", f"obligation {oid}.resolution_semantics_commitment must be sha256")
+
+
+def _validate_evidence_item_fields(
+    item: dict[str, Any],
+    *,
+    by_obligation: dict[str, dict[str, Any]],
+    evaluation_time: datetime,
+) -> None:
+    evidence_id = _require_nonempty_string(item.get("evidence_id"), "evidence_items[].evidence_id")
+    obligation_ids = _require_list(item.get("obligation_ids"), f"evidence {evidence_id}.obligation_ids")
+    if not obligation_ids:
+        raise ProfileValidationError("INPUT_INVALID", f"evidence {evidence_id}.obligation_ids must not be empty")
+    if any(not isinstance(oid, str) or not oid for oid in obligation_ids):
+        raise ProfileValidationError("INPUT_INVALID", f"evidence {evidence_id}.obligation_ids must contain strings")
+    if len(set(obligation_ids)) != len(obligation_ids):
+        raise ProfileValidationError("INPUT_INVALID", f"evidence {evidence_id}.obligation_ids contains duplicates")
+
+    source_ref = _require_nonempty_string(item.get("source_ref"), f"evidence {evidence_id}.source_ref")
+    for oid in obligation_ids:
+        obligation = by_obligation.get(oid)
+        if obligation is None:
+            raise ProfileValidationError("EVIDENCE_OBLIGATION_UNKNOWN", f"evidence {evidence_id} references unknown obligation {oid}")
+        if source_ref != obligation["source_ref"]:
+            raise ProfileValidationError(
+                "EVIDENCE_SOURCE_MISMATCH",
+                f"evidence {evidence_id} source {source_ref} is not admissible for obligation {oid}",
+            )
+
+    observed_at = _parse_time(item.get("observed_at"), code="EVIDENCE_TIME_INVALID")
+    if observed_at > evaluation_time:
+        raise ProfileValidationError(
+            "EVIDENCE_TIME_FUTURE",
+            f"evidence {evidence_id}.observed_at is after evaluation_time",
+        )
+
+    state = item.get("declared_state")
+    if not isinstance(state, str) or state not in ALLOWED_EVIDENCE_STATES:
+        raise ProfileValidationError(
+            "EVIDENCE_STATE_INVALID",
+            f"evidence {evidence_id}.declared_state must be one of {sorted(ALLOWED_EVIDENCE_STATES)}",
+        )
+
+    provenance = _require_dict(item.get("provenance"), f"evidence {evidence_id}.provenance")
+    provenance_source = _require_nonempty_string(
+        provenance.get("source_ref"), f"evidence {evidence_id}.provenance.source_ref"
+    )
+    if provenance_source != source_ref:
+        raise ProfileValidationError(
+            "EVIDENCE_PROVENANCE_SOURCE_MISMATCH",
+            f"evidence {evidence_id} provenance source does not match evidence source",
+        )
+
+
+def _validate_resolver_semantics(resolver: dict[str, Any]) -> str:
+    _verify_named_commitment(
+        resolver,
+        "classification_semantics",
+        "classification_semantics_commitment",
+        "RESOLVER_SEMANTICS_COMMITMENT_MISMATCH",
+    )
+    declared = resolver["classification_semantics"]
+    if declared != SUPPORTED_CLASSIFICATION_SEMANTICS:
+        raise ProfileValidationError(
+            "UNSUPPORTED_RESOLVER_SEMANTICS",
+            "declared classification semantics are not implemented by this proposed verifier",
+        )
+    return resolver["classification_semantics_commitment"]
+
+
 def _evidence_status(obligation: dict[str, Any], items: list[dict[str, Any]], evaluation_time: datetime) -> str:
+    """Classify already validated evidence under the single supported classifier."""
     oid = obligation["obligation_id"]
-    candidates = [item for item in items if oid in item.get("obligation_ids", [])]
+    candidates = [item for item in items if oid in item["obligation_ids"]]
     if not candidates:
         return "MISSING"
-    states = {str(item.get("declared_state", "unknown")).lower() for item in candidates}
+    states = {item["declared_state"] for item in candidates}
     if "conflict" in states or len({item.get("content_commitment") for item in candidates}) > 1:
         return "CONFLICT"
     if "unknown" in states:
         return "UNKNOWN"
-    max_age = obligation.get("max_age_seconds")
+    max_age = obligation["max_age_seconds"]
     for item in candidates:
-        observed_at = _parse_time(item.get("observed_at"), code="EVIDENCE_TIME_INVALID")
-        if isinstance(max_age, int) and max_age >= 0 and (evaluation_time - observed_at).total_seconds() > max_age:
+        observed_at = _parse_time(item["observed_at"], code="EVIDENCE_TIME_INVALID")
+        if (evaluation_time - observed_at).total_seconds() > max_age:
             return "STALE"
     if states == {"current"}:
         return "VALID"
@@ -161,10 +263,8 @@ def verify_record(record: dict[str, Any]) -> dict[str, Any]:
     policies = [_require_dict(x, "policies[]") for x in _require_list(record.get("policies"), "policies")]
     by_policy: dict[tuple[str, str], dict[str, Any]] = {}
     for policy in policies:
-        ref = policy.get("ref")
-        version = policy.get("version")
-        if not isinstance(ref, str) or not isinstance(version, str):
-            raise ProfileValidationError("INPUT_INVALID", "policy ref/version required")
+        ref = _require_nonempty_string(policy.get("ref"), "policies[].ref")
+        version = _require_nonempty_string(policy.get("version"), "policies[].version")
         key = (ref, version)
         if key in by_policy:
             raise ProfileValidationError("INPUT_INVALID", "duplicate policy ref/version")
@@ -172,20 +272,31 @@ def verify_record(record: dict[str, Any]) -> dict[str, Any]:
         _verify_named_commitment(policy, "evaluation_semantics", "evaluation_semantics_commitment", "POLICY_SEMANTICS_COMMITMENT_MISMATCH")
         by_policy[key] = policy
 
+    evaluation_time = _parse_time(record.get("evaluation_time"), code="EVALUATION_TIME_INVALID")
+    resolver = _require_dict(record.get("resolver_semantics"), "resolver_semantics")
+    supported_semantics_commitment = _validate_resolver_semantics(resolver)
+
     obligations = [_require_dict(x, "evidence_obligations[]") for x in _require_list(record.get("evidence_obligations"), "evidence_obligations")]
     by_obligation: dict[str, dict[str, Any]] = {}
     for obligation in obligations:
-        oid = obligation.get("obligation_id")
-        if not isinstance(oid, str) or not oid:
-            raise ProfileValidationError("INPUT_INVALID", "obligation_id required")
+        _validate_obligation_fields(obligation)
+        oid = obligation["obligation_id"]
         if oid in by_obligation:
             raise ProfileValidationError("INPUT_INVALID", "duplicate obligation_id")
-        origin = (obligation.get("policy_origin_ref"), obligation.get("policy_origin_version"))
+        origin = (obligation["policy_origin_ref"], obligation["policy_origin_version"])
         if origin not in by_policy:
             raise ProfileValidationError("POLICY_BINDING_FAILED", f"obligation {oid} has unknown policy origin")
         expected = obligation.get("obligation_commitment")
         if expected != commitment(_obligation_semantic_payload(obligation)):
             raise ProfileValidationError("OBLIGATION_COMMITMENT_MISMATCH", f"obligation {oid} commitment mismatch")
+        if (
+            obligation["resolution_semantics_id"] != SUPPORTED_RESOLUTION_SEMANTICS_ID
+            or obligation["resolution_semantics_commitment"] != supported_semantics_commitment
+        ):
+            raise ProfileValidationError(
+                "OBLIGATION_RESOLVER_SEMANTICS_MISMATCH",
+                f"obligation {oid} does not bind the supported declared resolver semantics",
+            )
         by_obligation[oid] = obligation
 
     requirements = [_require_dict(x, "institutional_requirements[]") for x in _require_list(record.get("institutional_requirements"), "institutional_requirements")]
@@ -209,19 +320,16 @@ def verify_record(record: dict[str, Any]) -> dict[str, Any]:
         _verify_named_commitment(item, "provenance", "provenance_commitment", "EVIDENCE_PROVENANCE_COMMITMENT_MISMATCH")
         if item.get("assurance_class") not in ALLOWED_ASSURANCE_CLASSES:
             raise ProfileValidationError("INPUT_INVALID", "invalid evidence assurance class")
+        _validate_evidence_item_fields(item, by_obligation=by_obligation, evaluation_time=evaluation_time)
 
     context = _require_dict(record.get("context"), "context")
     _verify_named_commitment(context, "materialized", "commitment", "CONTEXT_COMMITMENT_MISMATCH")
-    evaluation_time = _parse_time(record.get("evaluation_time"), code="EVALUATION_TIME_INVALID")
-
-    resolver = _require_dict(record.get("resolver_semantics"), "resolver_semantics")
-    _verify_named_commitment(resolver, "classification_semantics", "classification_semantics_commitment", "RESOLVER_SEMANTICS_COMMITMENT_MISMATCH")
 
     statuses: dict[str, str] = {}
     for oid, obligation in by_obligation.items():
         status = _evidence_status(obligation, evidence, evaluation_time)
         statuses[oid] = status
-        if obligation.get("required") is True and status != "VALID":
+        if obligation["required"] and status != "VALID":
             raise ProfileValidationError(f"EVIDENCE_{status}", f"required obligation {oid} resolved {status}")
 
     decision = _require_dict(record.get("decision"), "decision")
