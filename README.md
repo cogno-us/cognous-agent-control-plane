@@ -68,6 +68,14 @@ The repaired store supports cooperating writers on documented local Linux filesy
 
 Review original artifacts and their exact source revisions before extending a claim to a new environment. New dependencies, authority sources, destinations or enforcement mechanisms need their own compatibility and qualification. A passing reference case is not a certification of an enterprise deployment.
 
+## Opt-in local authority/effect claim profile
+
+Worker 21 adds a proposed, opt-in claim contract for a same-host SQLite authority/effect boundary. The legacy bounded execution path is unchanged.
+
+The claim is materialized only from a persisted authorized decision plus a fresh trusted Control Plane resolution. It binds institution/domain, actor/principal, grant identity/revision, the fully materialized operation, approvals, policy state, evidence state, effect limits and a bounded validity interval. Possession is explicitly non-authorizing; a participating executor must provision and consume the claim in its own authoritative transaction.
+
+See [docs/local-authority-effect-profile.md](docs/local-authority-effect-profile.md). This branch is implemented and tested as a proposal only; it is not yet merged or selected by the stack hub.
+
 ## Repository guide
 
 Use these sources for details; their historical checkpoints retain the status and scope of the work they recorded:
