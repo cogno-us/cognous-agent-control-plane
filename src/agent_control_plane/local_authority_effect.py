@@ -75,6 +75,7 @@ class LocalExecutionClaim(BaseModel):
     principal: str
     grant_id: str
     grant_revision: str
+    grant_status: Literal["active"]
     manifest_id: str
     manifest_version: str
     manifest_digest: str
@@ -355,6 +356,7 @@ def _materialize_under_handoff(
         authority_state = {
             "grant_id": current.grant_id,
             "grant_revision": current.grant_revision,
+            "grant_status": grant_status.status,
             "requirement_commitment": current.requirement_commitment,
             "approvals": approval_dump,
             "policies": policy_dump,
@@ -372,6 +374,7 @@ def _materialize_under_handoff(
             "principal": proposal.principal,
             "grant_id": current.grant_id,
             "grant_revision": current.grant_revision,
+            "grant_status": grant_status.status,
             "manifest_id": proposal.manifest_id,
             "manifest_version": proposal.manifest_version,
             "manifest_digest": proposal.manifest_digest,
@@ -504,6 +507,7 @@ def verify_local_execution_claim(claim: LocalExecutionClaim | dict[str, Any]) ->
     authority_state = {
         "grant_id": value.get("grant_id"),
         "grant_revision": value.get("grant_revision"),
+        "grant_status": value.get("grant_status"),
         "requirement_commitment": value.get("requirement_commitment"),
         "approvals": approvals,
         "policies": policies,
