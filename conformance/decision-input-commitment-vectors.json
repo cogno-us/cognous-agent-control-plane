@@ -1,0 +1,444 @@
+{
+  "profile_version": "0.1.0-proposed",
+  "status": "proposed-profile-tests",
+  "runtime_enforcement_claim": false,
+  "independent_external_truth_claim": false,
+  "notes": "Standalone vectors exercise the proposed decision-input commitment record only. They do not establish that the current runtime enforces this profile.",
+  "baseline_record": {
+    "profile_version": "0.1.0-proposed",
+    "authorizing": false,
+    "canonicalization_profile": "json-sort-keys-compact-utf8-no-nan-python-semantics-v0.1-proposed",
+    "commitment_algorithm": "SHA-256",
+    "candidate": {
+      "materialized": {
+        "actor": "urn:cognous:identity:refund-agent-1",
+        "action_id": "urn:cognous:action:refund-issue-routine-v1",
+        "target": "urn:cognous:account:customer-001",
+        "payload": {
+          "customer_id": "customer-001",
+          "refund_reason": "duplicate"
+        },
+        "amount": "50.00",
+        "unit": "USD"
+      },
+      "commitment": "sha256:76756c3645b5067ec03d5301365838d4b0a7c5a116e244d5c508c98e5221469c"
+    },
+    "institutional_requirements": [
+      {
+        "requirement_id": "urn:cognous:requirement:refund-routine",
+        "policy_origin_ref": "urn:cognous:policy:institutional-refund",
+        "policy_origin_version": "1.0",
+        "non_overridable": true,
+        "content": {
+          "permission": "refund.issue.routine",
+          "max_amount": "100.00",
+          "unit": "USD"
+        },
+        "obligation_commitments": {
+          "urn:cognous:obligation:entitlement": "sha256:640468c3cd95eaa33d85ba0136119c577d6e5dbcdbf95af6ac54cd5db907a4cf"
+        },
+        "commitment": "sha256:ef3ab9077dbf5a5c691ba098de97574a358355b3ed4884ce80ec2ace71a8539b"
+      }
+    ],
+    "policies": [
+      {
+        "kind": "institutional",
+        "ref": "urn:cognous:policy:institutional-refund",
+        "version": "1.0",
+        "content": {
+          "max_amount": "100.00",
+          "unit": "USD",
+          "required_obligations": [
+            "urn:cognous:obligation:entitlement"
+          ]
+        },
+        "evaluation_semantics": {
+          "engine": "cognous.synthetic.requirement-evaluator",
+          "version": "1"
+        },
+        "content_commitment": "sha256:e0bd3e42019a71331ffdd95c00f8dc3a4aad318525e735f7bb65fbc5ddafdfbc",
+        "evaluation_semantics_commitment": "sha256:bfdefa84ca10fb6b67017ad82fa4d5c4d4f24e594355868ba3b131473fc064a6"
+      },
+      {
+        "kind": "operational",
+        "ref": "urn:cognous:policy:refund-ops",
+        "version": "7",
+        "content": {
+          "business_hours_only": false,
+          "extra_obligations": [
+            "urn:cognous:obligation:case-open"
+          ]
+        },
+        "evaluation_semantics": {
+          "engine": "cognous.synthetic.operational-policy",
+          "version": "1"
+        },
+        "content_commitment": "sha256:7de924926d94c56bd61c2e10921ba75100ca3dd213dd363504496094874e9c03",
+        "evaluation_semantics_commitment": "sha256:ddd08fb12b0790f6687102973e48cf0b282870b9dfdb6f4f89a3dda33a7e0fb2"
+      }
+    ],
+    "evidence_obligations": [
+      {
+        "obligation_id": "urn:cognous:obligation:entitlement",
+        "policy_origin_ref": "urn:cognous:policy:institutional-refund",
+        "policy_origin_version": "1.0",
+        "required": true,
+        "source_ref": "urn:cognous:source:entitlement",
+        "max_age_seconds": 300,
+        "resolution_semantics_id": "urn:cognous:resolver:required-evidence-v1",
+        "resolution_semantics_commitment": "sha256:19afa1d8cc5f6ed826682f115e629d639770707d4639611ea5a6a7953d5be003",
+        "obligation_commitment": "sha256:640468c3cd95eaa33d85ba0136119c577d6e5dbcdbf95af6ac54cd5db907a4cf"
+      },
+      {
+        "obligation_id": "urn:cognous:obligation:case-open",
+        "policy_origin_ref": "urn:cognous:policy:refund-ops",
+        "policy_origin_version": "7",
+        "required": true,
+        "source_ref": "urn:cognous:source:case-system",
+        "max_age_seconds": 300,
+        "resolution_semantics_id": "urn:cognous:resolver:required-evidence-v1",
+        "resolution_semantics_commitment": "sha256:19afa1d8cc5f6ed826682f115e629d639770707d4639611ea5a6a7953d5be003",
+        "obligation_commitment": "sha256:c5cabfc6e79d6da2531181631af8d1e781820a1d11fb2b5e15c2109bd6d6a859"
+      }
+    ],
+    "evidence_items": [
+      {
+        "evidence_id": "urn:cognous:evidence:entitlement:1",
+        "obligation_ids": [
+          "urn:cognous:obligation:entitlement"
+        ],
+        "source_ref": "urn:cognous:source:entitlement",
+        "observed_at": "2026-10-07T12:00:00+00:00",
+        "declared_state": "current",
+        "content": {
+          "eligible": true
+        },
+        "content_commitment": "sha256:0dc7de62b436670e1b602c4838149e0945ba097f00aee8749ca38836228f3eba",
+        "provenance": {
+          "source_ref": "urn:cognous:source:entitlement",
+          "retrieved_via": "synthetic-fixture",
+          "authenticated": true
+        },
+        "provenance_commitment": "sha256:1d252e9b9a8eb9b1d67ed6c48c7579eb16daa1622187cd27af0ecdc231429257",
+        "assurance_class": "authenticated_source"
+      },
+      {
+        "evidence_id": "urn:cognous:evidence:case:1",
+        "obligation_ids": [
+          "urn:cognous:obligation:case-open"
+        ],
+        "source_ref": "urn:cognous:source:case-system",
+        "observed_at": "2026-10-07T12:00:00+00:00",
+        "declared_state": "current",
+        "content": {
+          "case_open": true
+        },
+        "content_commitment": "sha256:faca442a9fc4018de75149792323eaad9212543a1acfb39102483316f5041139",
+        "provenance": {
+          "source_ref": "urn:cognous:source:case-system",
+          "retrieved_via": "synthetic-fixture",
+          "authenticated": true
+        },
+        "provenance_commitment": "sha256:7850053a07fb8e6218ad5c4ef983a4feb75bae32f5dfd4d77f986c1dba003224",
+        "assurance_class": "authenticated_source"
+      }
+    ],
+    "context": {
+      "materialized": {
+        "institution_id": "urn:cognous:institution:synthetic-customer-service",
+        "authority_domain": "customer-refunds",
+        "risk_tier": "T1"
+      },
+      "commitment": "sha256:adc7dcf66d773c11c8873e9fd58374a2bdbedf1976bea81aeccab427f2edccf5"
+    },
+    "evaluation_time": "2026-10-07T12:01:00+00:00",
+    "resolver_semantics": {
+      "classification_semantics": {
+        "classifier": "exact-source-current-with-max-age",
+        "precedence": [
+          "CONFLICT",
+          "UNKNOWN",
+          "STALE",
+          "MISSING",
+          "VALID"
+        ],
+        "version": "1"
+      },
+      "classification_semantics_commitment": "sha256:19afa1d8cc5f6ed826682f115e629d639770707d4639611ea5a6a7953d5be003"
+    },
+    "assurance": {
+      "candidate": "trusted_declaration",
+      "commitments": "locally_recomputable_commitment",
+      "evidence_sources": "authenticated_source",
+      "external_truth": "trusted_declaration"
+    },
+    "decision": {
+      "result": "authorized",
+      "primary_reason": "OK",
+      "reason_precedence": [
+        "INPUT_INVALID",
+        "CANDIDATE_BINDING_FAILED",
+        "INSTITUTIONAL_REQUIREMENT_FAILED",
+        "POLICY_BINDING_FAILED",
+        "EVIDENCE_UNSATISFIED",
+        "CONTEXT_OR_TIME_FAILED",
+        "RESOLVER_SEMANTICS_FAILED",
+        "DECISION_INCONSISTENT"
+      ],
+      "input_commitment": "sha256:d284e207415376c63866c91336af0b99072c7dfff1f2e00d2fd4ceb55243b9e7"
+    },
+    "record_commitment": "sha256:5cef41017a53ecb0f616fdef541b6bed7f2ac4db6559aa68c937f491bad84530"
+  },
+  "record_vectors": [
+    {
+      "id": "baseline-valid",
+      "expect_valid": true
+    },
+    {
+      "id": "policy-content-changed-same-version",
+      "expect_valid": false,
+      "expected_code": "POLICY_CONTENT_COMMITMENT_MISMATCH",
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/policies/0/content/max_amount",
+          "value": "500.00"
+        }
+      ]
+    },
+    {
+      "id": "evidence-content-changed-same-source",
+      "expect_valid": false,
+      "expected_code": "EVIDENCE_CONTENT_COMMITMENT_MISMATCH",
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/evidence_items/0/content/eligible",
+          "value": false
+        }
+      ]
+    },
+    {
+      "id": "required-evidence-missing",
+      "expect_valid": false,
+      "expected_code": "EVIDENCE_MISSING",
+      "recompute_decision_input": true,
+      "patches": [
+        {
+          "op": "remove",
+          "path": "/evidence_items/0"
+        }
+      ]
+    },
+    {
+      "id": "required-evidence-stale",
+      "expect_valid": false,
+      "expected_code": "EVIDENCE_STALE",
+      "recompute_decision_input": true,
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/evidence_items/0/observed_at",
+          "value": "2026-10-07T11:00:00+00:00"
+        }
+      ]
+    },
+    {
+      "id": "required-evidence-unknown",
+      "expect_valid": false,
+      "expected_code": "EVIDENCE_UNKNOWN",
+      "recompute_decision_input": true,
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/evidence_items/0/declared_state",
+          "value": "unknown"
+        }
+      ]
+    },
+    {
+      "id": "required-evidence-conflict",
+      "expect_valid": false,
+      "expected_code": "EVIDENCE_CONFLICT",
+      "recompute_decision_input": true,
+      "patches": [
+        {
+          "op": "add",
+          "path": "/evidence_items/-",
+          "value": {
+            "evidence_id": "urn:cognous:evidence:entitlement:2",
+            "obligation_ids": [
+              "urn:cognous:obligation:entitlement"
+            ],
+            "source_ref": "urn:cognous:source:entitlement",
+            "observed_at": "2026-10-07T12:00:00+00:00",
+            "declared_state": "current",
+            "content": {
+              "eligible": false
+            },
+            "content_commitment": "sha256:9b5179ea2a77fe69b294fbd2ed504eacbfbe048ede58967b43af2ca537144b1f",
+            "provenance": {
+              "source_ref": "urn:cognous:source:entitlement",
+              "retrieved_via": "synthetic-fixture",
+              "authenticated": true
+            },
+            "provenance_commitment": "sha256:1d252e9b9a8eb9b1d67ed6c48c7579eb16daa1622187cd27af0ecdc231429257",
+            "assurance_class": "authenticated_source"
+          }
+        }
+      ]
+    },
+    {
+      "id": "institutional-obligation-removed",
+      "expect_valid": false,
+      "expected_code": "INSTITUTIONAL_OBLIGATION_REMOVED",
+      "recompute_decision_input": true,
+      "patches": [
+        {
+          "op": "remove",
+          "path": "/evidence_obligations/0"
+        }
+      ]
+    },
+    {
+      "id": "institutional-obligation-reinterpreted",
+      "expect_valid": false,
+      "expected_code": "INSTITUTIONAL_OBLIGATION_REINTERPRETED",
+      "recompute_decision_input": true,
+      "recompute_obligation": 0,
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/evidence_obligations/0/max_age_seconds",
+          "value": 3600
+        }
+      ]
+    },
+    {
+      "id": "candidate-altered-after-decision",
+      "expect_valid": false,
+      "expected_code": "DECISION_INPUT_COMMITMENT_MISMATCH",
+      "recompute_candidate": true,
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/candidate/materialized/target",
+          "value": "urn:cognous:account:customer-002"
+        }
+      ]
+    },
+    {
+      "id": "context-altered-after-decision",
+      "expect_valid": false,
+      "expected_code": "DECISION_INPUT_COMMITMENT_MISMATCH",
+      "recompute_context": true,
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/context/materialized/risk_tier",
+          "value": "T2"
+        }
+      ]
+    },
+    {
+      "id": "evaluation-time-altered-after-decision",
+      "expect_valid": false,
+      "expected_code": "DECISION_INPUT_COMMITMENT_MISMATCH",
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/evaluation_time",
+          "value": "2026-10-07T12:02:00+00:00"
+        }
+      ]
+    },
+    {
+      "id": "reason-precedence-altered",
+      "expect_valid": false,
+      "expected_code": "DECISION_REASON_PRECEDENCE_MISMATCH",
+      "patches": [
+        {
+          "op": "replace",
+          "path": "/decision/reason_precedence/0",
+          "value": "POLICY_BINDING_FAILED"
+        }
+      ]
+    }
+  ],
+  "canonicalization_vectors": [
+    {
+      "id": "object-key-order-equivalent",
+      "operation": "equal",
+      "left": {
+        "b": 2,
+        "a": 1
+      },
+      "right": {
+        "a": 1,
+        "b": 2
+      }
+    },
+    {
+      "id": "numeric-integer-vs-float-distinct",
+      "operation": "distinct",
+      "left": {
+        "n": 1
+      },
+      "right": {
+        "n": 1.0
+      }
+    },
+    {
+      "id": "numeric-zero-vs-negative-float-zero-distinct",
+      "operation": "distinct",
+      "left": {
+        "n": 0.0
+      },
+      "right": {
+        "n": -0.0
+      }
+    },
+    {
+      "id": "unicode-codepoint-sequence-distinct",
+      "operation": "distinct",
+      "left": {
+        "s": "é"
+      },
+      "right": {
+        "s": "é"
+      }
+    },
+    {
+      "id": "absent-vs-null-distinct",
+      "operation": "distinct",
+      "left": {},
+      "right": {
+        "value": null
+      }
+    },
+    {
+      "id": "explicit-null-stable",
+      "operation": "equal",
+      "left": {
+        "value": null
+      },
+      "right": {
+        "value": null
+      }
+    }
+  ],
+  "malformed_value_vectors": [
+    {
+      "id": "nan-rejected",
+      "description": "NaN is rejected by allow_nan=false"
+    },
+    {
+      "id": "set-rejected",
+      "description": "Python set is not a JSON value"
+    },
+    {
+      "id": "bytes-rejected",
+      "description": "Python bytes is not a JSON value"
+    }
+  ]
+}
