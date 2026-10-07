@@ -39,21 +39,33 @@ The claim binds:
 - profile version and complete claim commitment.
 
 The optional `decision_input_commitment` and
-`decision_input_profile_version` fields are opaque compatibility hooks for
-Worker 20 PR #11. Worker 21 does not consume that unaccepted branch and does not
-redefine its Decision Input Commitment Record.
+`decision_input_profile_version` fields are opaque compatibility hooks for the
+Decision Input Commitment profile now merged on Control Plane `main` at
+`29337fe900d3b2da5656c77d56d70f18feb190b8`. Worker 21 does **not**
+silently adopt that profile into the authority/effect runtime and does not
+reinterpret the Decision Input Commitment Record as executable authority.
 
 ## Trust boundary
 
-`materialize_local_execution_claim()` is a trusted-host operation. It is not an
-agent message parser and does not accept an arbitrary assertion as an execution
-claim. It checks the persisted decision and performs a fresh Control Plane
-resolution before emitting the claim.
+Claim issuance has two distinct APIs.
 
-The claim is still not cryptographic authority and does not solve the
-check/effect race alone. The corresponding executor profile must store the claim
-in the same authoritative SQLite database as mutable authority state and the
-protected effect, then validate and consume it in the effect transaction.
+`materialize_local_execution_claim()` returns a validated, non-executable
+snapshot artifact. It is not sufficient for the Worker 21 execution profile.
+
+`provision_local_execution_claim()` defines the trusted authority handoff.
+The resolver must expose an `authority_effect_handoff` boundary that excludes
+all trusted authority-invalidating writers while the Control Plane performs the
+final resolve, captures one coherent authority snapshot, validates active/current
+grant, approval, policy and evidence projections, constructs the claim, and
+provisions that exact claim into the participating executor store.
+
+Only after the provisioning callback returns does the local SQLite store become
+authoritative for subsequent profile mutations. A second ordinary resolver check
+without this exclusion-and-provisioning handoff does not establish the profile.
+
+The claim is still not cryptographic authority. The corresponding executor must
+validate and consume the provisioned claim in the same authoritative SQLite
+transaction as the protected effect.
 
 ## Compatibility
 
@@ -63,7 +75,9 @@ protected effect, then validate and consume it in the effect transaction.
 - Existing consumers remain compatible.
 - The existing execution path remains selected unless an integrator explicitly
   opts into the new local profile.
-- Worker 20's proposal remains independent and non-authorizing.
+- The merged Worker 20 Decision Input Commitment profile remains independent
+  and non-authorizing; Worker 21 uses only optional opaque linkage fields unless
+  a later explicit integration is reviewed.
 
 ## Not claimed
 
