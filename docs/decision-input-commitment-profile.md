@@ -4,148 +4,145 @@ Status: **proposal only; non-authorizing; not implemented by the live authorizat
 
 Profile version: `0.1.0-proposed`.
 
-This document specifies the smallest compatible extension identified by Worker 20 after reviewing the current Control Plane, Replay Bundle, Governance Evidence Pack, the selected hub pins, and *From Intent to Execution Grant: An Execution-Boundary Conformance Profile for High-Risk AI Actions*. The paper is research input, not an adopted Cognous requirement. This proposal therefore reuses Cognous objects and terminology instead of introducing an EBL-specific runtime object model.
+This document specifies the bounded Decision Input Commitment sidecar proposed by Worker 20 after reviewing the current Control Plane, Replay Bundle, Governance Evidence Pack, the selected hub pins, and *From Intent to Execution Grant: An Execution-Boundary Conformance Profile for High-Risk AI Actions*. The research paper is input, not an adopted Cognous framework. Existing Cognous concepts remain authoritative.
 
-## 1. Problem and current guarantee map
+## 1. Scope and compatibility
 
-The current bounded Control Plane already binds substantial execution state:
+The proposed artifact is a standalone sidecar keyed to the existing decision/proposal chain. It does **not** modify `RuntimeDecision`, `AuthorizationBinding`, `BoundedRunRecord`, Execution Envelope, executor producer schemas, dependency pins, or the live `BoundedAuthorizationWorkflow`.
 
-| Current field / behavior | What it establishes | Remaining gap addressed here |
-|---|---|---|
-| `RuntimeProposal` commitment | Exact serialized proposal, including candidate-related fields | Does not identify the full closed adjudication input set as one retained object |
-| Manifest ID/version/digest and payload commitment | Useful action and declaration binding | Not policy-content or evaluation-semantics identity |
-| `AuthorizationBinding.requirement_commitment` | Locally recomputable commitment to the selected institutional requirement | Does not separately retain the origin/identity of every non-overridable obligation |
-| `policy_versions` + `PolicyStatus(ref, version, status, observed_at, institution, domain)` | Current reference/version/status/freshness binding | Version label can remain unchanged while policy content or evaluation semantics changes |
-| `EvidenceStatus(obligation_id, state, observed_at, source_ref, institution, domain)` | Obligation/source/status/freshness binding | Does not commit to the complete materialized evidence content or its provenance |
-| role-mapping version/digest | Current resolver mapping identity | Other resolver/classification semantics are not uniformly content-bound |
-| effect-time `_resolve` equality | Re-resolves live authorization-critical inputs and detects many changes | Cannot detect same-label policy/evidence semantic substitution if resolver status records remain unchanged |
-| Replay Reconstruction Bundle | Preserves producer records, commitments and links; policy re-evaluation is explicitly false | Record consistency is not independent recomputation of the authorization decision |
-| Governance Evidence Pack | Retains source artifacts and locally computed artifact hashes with explicit limitations | Does not independently establish external truth or operational effectiveness |
+A valid sidecar is not authority. It does not issue, renew, consume, suspend or revoke a grant; authorize a destination call; prove that the live Control Plane used the sidecar; prove source authenticity or external truth; prove complete mediation; or establish effect occurrence/outcome correctness.
 
-The existing `commitment()` helper is deterministic within the current Python implementation: sorted compact JSON, UTF-8, `ensure_ascii=false`, and `allow_nan=false`. The same behavior is used by current compatible consumers. Cross-language equivalence has not been established.
+Authority, permission consumption, business-intent deduplication, destination observation and outcome verification remain distinct contracts.
 
-## 2. Proposed artifact: Decision Input Commitment Record
+## 2. Existing bindings and bounded gap
 
-The extension is a **sidecar record**, not a new field in `RuntimeDecision`, `AuthorizationBinding`, `BoundedRunRecord`, Execution Envelope, or any existing producer schema.
+Current Control Plane bindings already include Manifest ID/version/digest, payload commitment, full proposal commitment, requirement commitment, grant revision, policy ref/version status, and role-mapping version/digest. Those remain useful and are not replaced.
 
-A record is keyed to the existing decision/proposal chain and is expressly non-authorizing:
+The proposed sidecar closes only the following representation gap:
 
-```text
-DecisionInputCommitmentRecord 0.1.0-proposed
-  authorizing = false
-  candidate
-    materialized object
-    exact candidate commitment
-  institutional_requirements[]
-    requirement id
-    requirement content commitment
-    non_overridable = true
-    policy origin
-    required institutional-obligation commitments
-  policies[]
-    ref + version
-    kind = institutional | operational
-    policy content + content commitment
-    evaluation-semantics identity + commitment
-  evidence_obligations[]
-    obligation id
-    policy origin ref + version
-    required flag
-    admissible source reference
-    freshness rule
-    resolution-semantics identity + commitment
-    obligation commitment
-  evidence_items[]
-    evidence id
-    obligation ids
-    source ref
-    materialized content + content commitment
-    provenance + provenance commitment
-    observation time/state
-    assurance class
-  context
-    complete decision-relevant projection + commitment
-  evaluation_time
-    explicit adjudication time
-  resolver_semantics
-    classification/resolution semantics + commitment
-  assurance
-    declared / recomputable / authenticated / externally verified classification
-  decision
-    semantic result
-    primary reason
-    profile-defined deterministic reason precedence
-    commitment to complete closed decision inputs
-  record_commitment
+- policy ref/version/status does not by itself commit policy contents or evaluation semantics;
+- evidence obligation/source/status/time does not by itself commit complete materialized evidence/provenance;
+- resolver/classification semantics need an explicit versioned identity;
+- a decision-input commitment needs a closed set of candidate, requirement, policy, obligation, evidence, context, time and resolver inputs.
+
+Replay reconstruction remains historical reconstruction, not automatic independent authorization recomputation. Governance Evidence Pack import/commitment checks remain distinct from external truth or operational verification.
+
+## 3. Decision Input Commitment Record
+
+The sidecar binds:
+
+1. exact materialized candidate and commitment;
+2. applicable institutional requirements and commitments;
+3. institutional and operational policy content plus evaluation-semantics commitments;
+4. complete evidence obligations, including policy origin, required flag, admissible source, freshness rule and resolution-semantics identity;
+5. complete evidence content/provenance commitments and observation metadata;
+6. complete decision-relevant context;
+7. explicit adjudication time;
+8. declared resolver/classification semantics;
+9. assurance classifications;
+10. decision, primary reason and deterministic reason precedence; and
+11. one commitment over the complete closed decision-input payload.
+
+Historical records are not backfilled. Absence of this sidecar in an older record means the additional commitments are unavailable, not that the historical decision is retroactively invalid.
+
+## 4. Policy and institutional-obligation identity
+
+Policy semantic identity is the tuple of policy reference/version, exact policy-content commitment, and exact evaluation-semantics commitment. Reusing the same version label with different content or evaluation semantics is a different decision input.
+
+Existing Authority Context requirements remain the Cognous representation of non-overridable institutional requirements. Each institutional requirement binds the exact commitments of its institutional obligations. Operational policy may add obligations but cannot silently remove, rename or reinterpret an institutional obligation while retaining its prior identity.
+
+Any legitimate policy replacement creates a new decision input. A claim that a replacement is "stricter", "narrower" or otherwise non-expanding does not preserve an earlier authorization by itself.
+
+## 5. Supported evidence classifier
+
+This proposed verifier intentionally implements **one** evidence-classification semantics and rejects alternatives explicitly.
+
+Semantics identifier:
+
+`urn:cognous:resolver:required-evidence-v1`
+
+Declared classifier:
+
+```json
+{
+  "classifier": "exact-source-current-with-max-age",
+  "version": "1",
+  "admissible_source": "exact-match",
+  "future_observation": "reject",
+  "precedence": ["CONFLICT", "UNKNOWN", "STALE", "MISSING", "VALID"]
+}
 ```
 
-An implementation may replace embedded materialized objects with immutable retrievable objects only if the verification context can retrieve the exact committed semantic object. A dangling reference is not equivalent to a materialized closed input.
+The resolver's `classification_semantics_commitment` must match that exact object. Every obligation must bind both the supported semantics identifier and the same semantics commitment. A different resolver object, a different obligation semantics identifier, or a resolver/obligation commitment mismatch is rejected before evidence classification.
 
-### 2.1 Non-authorizing semantics
+This verifier does not interpret unsupported semantics approximately.
 
-A valid record means only that the supplied record is structurally valid under this proposed profile and that locally recomputable commitments agree. It does **not** issue, renew, consume, suspend or revoke a grant; authorize a destination call; prove the live Control Plane used the record; authenticate a provider merely because its reference is present; prove evidence truth; or prove complete mediation, destination finality, effect occurrence or outcome correctness.
+## 6. Pre-classification field validation
 
-Authority, permission consumption, business-intent deduplication, destination observation and outcome verification remain separate contracts.
+Fields are type-checked before evidence classification.
 
-## 3. Input closure and bindings
+For each obligation:
 
-The decision-input commitment covers, as one closed payload:
+- `obligation_id`, policy origin, source reference and semantics identifier must be non-empty strings;
+- `required` must be a JSON/Python boolean exactly; strings, integers and other truthy/falsy values are rejected;
+- `max_age_seconds` must be a non-negative integer exactly; booleans, strings, floats, null and negative integers are rejected;
+- `resolution_semantics_commitment` must be a SHA-256 commitment and must match the declared supported resolver semantics;
+- the obligation must point to an existing policy ref/version.
 
-1. profile/canonicalization/commitment versions;
-2. exact candidate and commitment;
-3. all applicable institutional requirements;
-4. all policy objects plus policy-evaluation semantics;
-5. complete applicable evidence-obligation set;
-6. complete materialized evidence used to classify those obligations;
-7. decision-relevant context;
-8. explicit adjudication time;
-9. resolver/classification semantics; and
-10. assurance classifications.
+For each evidence item:
 
-The decision contains `input_commitment` over that closed payload. Mutating any component while retaining the earlier decision invalidates the binding. Component commitments remain separately visible so a verifier can identify which input class changed rather than seeing only one opaque bundle hash.
+- evidence ID and source reference must be non-empty strings;
+- `obligation_ids` must be a non-empty, duplicate-free string array referencing known obligations;
+- `declared_state` must be exactly one of `current`, `unknown`, or `conflict`;
+- observation time must be parseable and timezone-aware;
+- provenance must be an object with a source reference matching the evidence item source;
+- the evidence source must exactly match the admissible source declared by every obligation the item claims to discharge.
 
-## 4. Policy identity and institutional non-weakening
+These checks occur before `VALID`/`UNKNOWN`/`STALE`/`MISSING`/`CONFLICT` classification.
 
-`PolicyStatus.ref` and `version` remain useful status coordinates but are insufficient as semantic identity. The proposal adds:
+## 7. Source and time semantics
 
-- `content_commitment`: exact policy-content identity;
-- `evaluation_semantics`: named/versioned evaluator or semantics object;
-- `evaluation_semantics_commitment`: exact semantics identity.
+### Admissible source
 
-Reusing a policy version label with different content or evaluation semantics is a different decision input and invalidates reuse of the earlier decision record.
+Evidence is eligible for an obligation only when:
 
-### 4.1 Non-overridable institutional obligations
+`evidence.source_ref == obligation.source_ref`.
 
-Existing Authority Context requirements provide the natural Cognous root for non-overridable institutional constraints. This proposal does not rename them as a second governance framework.
+A committed evidence object from another source does not discharge the obligation. Source identity here is still a declared/authenticated-input property; exact matching does not independently prove provider honesty or external truth.
 
-Each institutional requirement records the exact commitments of obligations that originate from that requirement/policy. Operational policy may add obligations. It may not remove an institutional obligation, change its policy origin, or change its committed resolution semantics/content while presenting it as the same institutional obligation.
+### Future observations
 
-A legitimate institutional-policy replacement is administratively possible, but it creates a new decision input. The earlier decision remains historical evidence and cannot be silently reinterpreted as current permission.
+This proposed classifier has **zero future tolerance**. If an evidence item's `observed_at` is later than the explicit `evaluation_time`, verification fails with `EVIDENCE_TIME_FUTURE`.
 
-## 5. Evidence obligations and evidence identity
+Future-dated evidence is not treated as fresh and is not converted to `VALID`. A future deployment that needs clock-skew tolerance must define a different versioned classifier semantics and cannot silently reuse this profile.
 
-An obligation is separately committed from the evidence item that discharges it. Its identity includes obligation ID, policy origin ref/version, required/optional status, admissible source reference, freshness bound, and resolution/classification semantics identity and commitment.
+### Freshness
 
-Evidence items separately commit exact materialized content, provenance metadata, source reference, observation time/state, and obligation bindings.
+After structural/source/time validation, current evidence is `STALE` when:
 
-For positive required obligations, only `VALID` discharges the obligation. `MISSING`, `UNKNOWN`, `STALE`, and `CONFLICT` remain distinct failures. These states classify supplied evidence under declared semantics; they are not claims about external truth.
+`evaluation_time - observed_at > max_age_seconds`.
 
-## 6. Assurance / verification classes
+Only `VALID` discharges a required positive obligation. `MISSING`, `UNKNOWN`, `STALE`, and `CONFLICT` remain distinct outcomes.
 
-The record distinguishes four classes:
+## 8. Integrity versus semantic validation
 
-| Class | Meaning | Does not mean |
-|---|---|---|
-| `trusted_declaration` | A designated component declares the value and the integration chooses to trust it | Cryptographically authenticated or independently true |
-| `locally_recomputable_commitment` | The verifier recomputed a commitment from supplied materialized content | Source authenticity or external truth |
-| `authenticated_source` | Source identity/integrity was authenticated under a separately specified mechanism | The assertion is substantively true or complete |
-| `externally_verified_fact` | An independent mechanism established the named fact under its own contract | Universal truth, correct policy, correct intent, or complete mediation |
+The profile deliberately distinguishes commitment failure from semantic failure.
 
-The bounded verifier in this PR establishes only local structure/commitments. It does not create authenticated-source or externally-verified-fact status by itself.
+Examples:
 
-## 7. Decision and deterministic reason precedence
+- stale hashes produce commitment-mismatch errors;
+- a recomputed but wrong source produces `EVIDENCE_SOURCE_MISMATCH`;
+- recomputed future-dated evidence produces `EVIDENCE_TIME_FUTURE`;
+- recomputed malformed freshness bounds produce `EVIDENCE_FRESHNESS_INVALID`;
+- recomputed non-boolean `required` values produce `OBLIGATION_REQUIRED_INVALID`;
+- recomputed unsupported resolver semantics produce `UNSUPPORTED_RESOLVER_SEMANTICS`;
+- recomputed obligation semantics that do not match the supported resolver produce `OBLIGATION_RESOLVER_SEMANTICS_MISMATCH`.
 
-The proposed record carries an explicit, versioned precedence order for primary failure classification:
+The conformance-vector harness recomputes affected component commitments, the complete decision-input commitment, and the record commitment for the review-negative cases. Therefore those cases test semantic validation rather than merely stale digest detection.
+
+## 9. Decision and reason precedence
+
+The proposed record retains the deterministic primary-reason order:
 
 1. `INPUT_INVALID`
 2. `CANDIDATE_BINDING_FAILED`
@@ -156,98 +153,82 @@ The proposed record carries an explicit, versioned precedence order for primary 
 7. `RESOLVER_SEMANTICS_FAILED`
 8. `DECISION_INCONSISTENT`
 
-This is a proposed record-level classification contract, not a claim that current `BoundedAuthorizationWorkflow` exposes these reason codes. A later runtime PR must define a mapping and compatibility tests before claiming implementation.
+This is a proposed record-level contract. Current runtime reason lists are not claimed to implement it.
 
-## 8. Decision-to-execution change behavior
+## 10. Decision-to-execution changes
 
-No policy/evidence change is automatically safe merely because it is described as "stricter," "narrower," or "more secure."
+Any decision-relevant mutation after adjudication invalidates reuse of the earlier closed input:
 
-For any decision-relevant change after adjudication and before effect:
-
-- candidate change: earlier decision-input commitment is unusable; re-adjudicate;
+- candidate change: re-adjudicate;
 - policy ref/version/content/evaluation-semantics change: re-adjudicate;
-- institutional obligation removal/reinterpretation: fail closed; re-adjudicate only after legitimate institutional replacement;
-- evidence content/provenance/source/status change: reclassify under committed obligation semantics and re-adjudicate when the closed input changes;
+- institutional obligation removal/reinterpretation: fail closed and require legitimate replacement plus fresh adjudication;
+- evidence content/provenance/source/state change: reclassify and re-adjudicate;
 - context change: re-adjudicate;
-- resolver/classification semantics change: re-adjudicate;
-- passage of time: do **not** mutate historical `evaluation_time`; perform a new current-time evaluation of temporal predicates. If it contributes to authorization, it is a new closed decision input/decision record.
+- resolver/classification semantics change: reject if unsupported or re-adjudicate under a separately adopted profile;
+- passage of time: preserve the historical adjudication time and perform a new current-time evaluation rather than rewriting history.
 
-A proof that a new operational policy is non-expanding may be useful governance evidence, but does not itself preserve an earlier authorization or grant.
+Worker 19 separately owns authority/effect race and linearization qualification. This sidecar does not close that runtime boundary.
 
-Worker 19 separately owns authority/effect race and linearization qualification. This proposal does not claim to close that runtime race.
+## 11. Canonicalization
 
-## 9. Canonicalization profile and limits
-
-To remain compatible with current Cognous commitments, the proposed vectors deliberately use existing Python JSON behavior rather than replacing canonicalization globally:
+The sidecar continues to reuse the current Python commitment behavior rather than replacing stack canonicalization globally:
 
 `json-sort-keys-compact-utf8-no-nan-python-semantics-v0.1-proposed`
 
-Properties made explicit by the vectors:
+The vectors retain explicit tests for key ordering, integer versus float representation, negative zero, Unicode code-point sequence, absent versus null, and malformed/non-JSON values. Cross-language equivalence remains unestablished.
 
-- object key order is normalized;
-- integer `1` and floating `1.0` are distinct serialized values;
-- `0.0` and `-0.0` are distinct serialized values;
-- Unicode is emitted as UTF-8 without normalization, so NFC and NFD strings remain distinct;
-- absent member and explicit `null` are distinct;
-- NaN and non-JSON values are rejected.
-
-This is intentionally **not** a cross-language canonical JSON claim. A later interoperability profile may adopt a stronger standard only through a new canonicalization-profile identifier and cross-language vectors; it must not silently change existing commitments.
-
-## 10. Consumer compatibility and migration
+## 12. Consumer migration
 
 ### Control Plane
 
-No current runtime model or authorization path changes in this batch. A later runtime PR may emit the sidecar after adjudication and persist it separately, keyed by decision ID plus existing proposal commitment. It must define lifecycle/atomicity with the decision record before the sidecar becomes enforcement-critical.
+No runtime adoption occurs in this PR. A later runtime PR must define durable sidecar storage and lifecycle/atomicity relative to `RuntimeDecision` before it can become enforcement-critical.
 
 ### Replay Bundle
 
-Current Reconstruction Bundle `0.2.0` already has generic `SourceRecord`, `CommitmentRecord`, links and explicit semantics stating that import is reconstruction, not policy re-evaluation. A later Replay adapter can ingest this sidecar as a new revision-pinned source record and locally recompute commitments while continuing to distinguish producer-attributed claims from independently checked facts.
-
-Do not inject this artifact as an unknown top-level `BoundedRunRecord` field: current import completeness handling treats unknown producer fields as unmapped, and the live model does not expose them.
+A later revision-pinned importer may map the sidecar into Reconstruction `SourceRecord` / `CommitmentRecord` structures. Replay must continue to distinguish locally recomputed commitment checks from policy re-evaluation or independent truth verification.
 
 ### Governance Evidence Pack
 
-A later transformation can preserve the sidecar and locally checked commitments in traceable import metadata. It must retain the current limitation that semantic import validation is not independent operational verification or external truth verification.
+A later transformation may preserve the sidecar and its validation findings. It must not turn local semantic validation into a claim of independent operational verification.
 
 ### Hub
 
-No dependency pin advances in this batch. Hub adoption requires separate accepted consumer revisions and integration qualification.
+No hub pin changes occur here. Adoption requires accepted producer/consumer revisions and separate integration qualification.
 
-### Historical records
+## 13. Proposed-profile vectors and current result
 
-Historical RuntimeDecision/Reconstruction/Evidence Pack records remain valid only for claims supported at their original revisions. They are not backfilled with policy/evidence commitments that were never recorded. Absence of a sidecar is `unavailable`, not evidence that an old decision was invalid.
+`conformance/decision-input-commitment-vectors.json` remains explicitly labeled `proposed-profile-tests` with both runtime-enforcement and independent-external-truth claims set to false.
 
-### Version consequences
+Focused review coverage now includes:
 
-This proposal introduces only `DecisionInputCommitmentRecord 0.1.0-proposed`. It does not bump existing RuntimeDecision, BoundedRunRecord, Reconstruction Bundle, Evidence Pack, Manifest, Execution Envelope, or executor producer schemas. Any future producer adoption must assign a reviewed non-proposed version and update downstream adapters explicitly.
+- wrong evidence source with recomputed provenance/closed-input/record commitments;
+- future-dated evidence with recomputed closed-input/record commitments;
+- obligation/resolver semantics mismatch with recomputed obligation/institutional-reference/closed-input/record commitments;
+- unsupported resolver semantics with recomputed resolver, obligation, institutional-reference, closed-input and record commitments;
+- string and negative freshness bounds with recomputed commitments;
+- string and integer non-boolean `required` flags with recomputed commitments.
 
-## 11. Proposed-profile vectors
+Focused local result after hardening:
 
-`conformance/decision-input-commitment-vectors.json` is explicitly marked `proposed-profile-tests` and covers:
+```text
+pytest -q tests/test_decision_input_commitment_profile.py
+25 passed in 0.06s
+```
 
-- policy content changed under the same version label;
-- evidence changed under the same source reference;
-- missing, stale, unknown and conflicting required evidence;
-- removed and reinterpreted institutional obligations;
-- changed candidate, context and historical adjudication time under an earlier decision-input commitment;
-- deterministic reason-precedence mutation;
-- numeric representation, Unicode normalization, absent/null and malformed JSON values.
+These results establish only the behavior of this proposed standalone verifier and vector corpus.
 
-The standalone verifier and tests demonstrate only that these proposed record rules are executable. They are not evidence that current runtime enforcement implements this proposal.
+## 14. Deferred adoption work
 
-## 12. Deferred implementation work
+A later runtime/consumer batch still must:
 
-A later runtime PR must, at minimum:
+1. define durable sidecar emission/storage relative to `RuntimeDecision`;
+2. authenticate and materialize production policy/evidence sources;
+3. define production clock authority/tolerance through an adopted resolver profile;
+4. map runtime reasons to an adopted deterministic primary-reason contract;
+5. perform adopted effect-time commitment comparison/fresh adjudication;
+6. add Replay and Evidence Pack consumer support;
+7. add independently developed/cross-language canonicalization evaluation;
+8. qualify integration before advancing hub pins; and
+9. coordinate authority/effect linearization with Worker 19.
 
-1. define durable sidecar storage/atomicity with `RuntimeDecision`;
-2. materialize exact policy contents and evaluation semantics from authenticated production resolvers;
-3. materialize complete evidence content/provenance rather than status-only responses;
-4. define authenticated policy/evidence source mechanisms and clock trust;
-5. map existing runtime reason sets to an adopted deterministic primary-reason contract;
-6. emit and compare current decision-input commitments at execution-time revalidation;
-7. define a current-time re-evaluation record without rewriting historical adjudication time;
-8. update Replay with a revision-pinned sidecar importer and semantic checks;
-9. update Evidence Pack transformation/support metadata;
-10. qualify consumer compatibility and then, only if accepted, advance hub pins;
-11. add independently developed/cross-language canonicalization tests before any portability claim; and
-12. coordinate with Worker 19 for decision/effect linearization rather than treating this sidecar as a repair for the authority/effect race.
+No EBL conformance, production enforcement, independent external-truth verification, complete mediation or external outcome correctness is claimed.
