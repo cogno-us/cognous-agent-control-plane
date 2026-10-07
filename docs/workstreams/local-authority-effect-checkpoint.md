@@ -6,16 +6,21 @@ Starting main: `467446356e213e6d821cc2288cb9ade57b581adc`.
 
 Branch: `worker21/local-authority-effect-profile`.
 
-Worker 20 PR #11 was reviewed at `7294da2e783b4a7f058b3e1ecdefd2cfaf1ddfce`.
-Its Decision Input Commitment Record remains proposal-only and non-authorizing.
-Worker 21 does not consume that branch. The local claim reserves only opaque
-`decision_input_commitment` and `decision_input_profile_version` fields.
+Worker 20 PR #11 is now merged on Control Plane `main` at
+`29337fe900d3b2da5656c77d56d70f18feb190b8`. That Decision Input
+Commitment profile remains non-authorizing. Worker 21 does not silently adopt it
+into this execution path; the local claim keeps only opaque optional
+`decision_input_commitment` and `decision_input_profile_version` linkage
+fields.
 
 ## Contract choice
 
-The Control Plane owns claim materialization semantics, not the effect transaction.
-A claim is emitted only from an immutable persisted authorized decision whose
-fresh resolution still equals the stored `AuthorizationBinding`.
+The Control Plane owns claim issuance semantics, not the effect transaction.
+The enforceable path is `provision_local_execution_claim()`: the authority
+source must hold a trusted mutation-exclusion handoff while the final resolve,
+coherent snapshot capture, active/current projection validation, claim
+construction and destination provisioning all occur. A separate ordinary
+recheck without that handoff is explicitly insufficient.
 
 The claim binds exact operation content, institution/domain, actor/principal,
 grant identity/revision, requirement commitment, current approvals, policy state,
@@ -42,7 +47,9 @@ pytest -q tests/test_local_authority_effect_profile.py
 ```
 
 The branch supplies focused tests for exact claim binding, tamper rejection,
-changed-authority refusal before issuance and grant-bounded expiry. Final CI
+changed-authority refusal before issuance, grant-bounded expiry, invalidation
+between successful final resolve and snapshot capture, and proof that
+provisioning occurs inside the trusted handoff boundary. Final CI
 results must be taken from the PR head; no local execution result is asserted by
 this checkpoint until CI is observed.
 
