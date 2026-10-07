@@ -1,0 +1,307 @@
+[
+  {
+    "path": "baseline/junit.xml",
+    "sha256": "0cbe6099449a773c4f6dc58e161dbcabd6a8090f540592353e0838a90873874d",
+    "bytes": 375
+  },
+  {
+    "path": "baseline/pytest.log",
+    "sha256": "3e1e89e8f81abee974408783c9f919d529f621b9718d4269d9a2703e22f478f6",
+    "bytes": 98
+  },
+  {
+    "path": "baseline/shared-control-plane-store.json",
+    "sha256": "0532fec38bca13143e1a5c97a35aedf23a4e16d6468299ae67365fca11efb16a",
+    "bytes": 78830
+  },
+  {
+    "path": "final-run-1/junit.xml",
+    "sha256": "a4b2165fd70c224942b147b8d04595c20c8f4b0cec423e4024fb5762dcbf1997",
+    "bytes": 2818
+  },
+  {
+    "path": "final-run-1/pytest.log",
+    "sha256": "e4b315c30808c764ee96e9b4b41e629452a1bb151decc89fb345ff5675b370dc",
+    "bytes": 99
+  },
+  {
+    "path": "final-run-1/scenarios/concurrent-attempts.json",
+    "sha256": "2451c55f25795f4c3ad6ff5b091f99c06a4d1b09fa876237942e3e747a7fd02f",
+    "bytes": 9862
+  },
+  {
+    "path": "final-run-1/scenarios/concurrent-decisions.json",
+    "sha256": "d7606d1ebf68480e7530ee4bb04797519530cfaa86330f6a753121a5d29e49c9",
+    "bytes": 9646
+  },
+  {
+    "path": "final-run-1/scenarios/concurrent-mixed.json",
+    "sha256": "5bb83b3025980437b665719a8f9aeb032f330a2db6280123193389dbf686fa49",
+    "bytes": 33886
+  },
+  {
+    "path": "final-run-1/scenarios/concurrent-observations.json",
+    "sha256": "75c5b85d788679f5a5486b8f2762dff0dc347385dd9fb6d924608c82d0ee0843",
+    "bytes": 8806
+  },
+  {
+    "path": "final-run-1/scenarios/concurrent-reconciliations.json",
+    "sha256": "b3d3b3e6906be8841cb29c063d180f0383b12c3ee5c29d1384683c91aaf95b8c",
+    "bytes": 14422
+  },
+  {
+    "path": "final-run-1/scenarios/termination-after.json",
+    "sha256": "4cb35a62fcaa4d9984e0427775102c7a1698c570daf82b8f10b565315c72af17",
+    "bytes": 903
+  },
+  {
+    "path": "final-run-1/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "full/junit.xml",
+    "sha256": "169518e89900049c5b1662fe674de0b554148c5dcbf9bd19a2e0e469d8a94014",
+    "bytes": 18772
+  },
+  {
+    "path": "full/pytest.log",
+    "sha256": "a60e6bbbaec41ecef3fcee3e2edc1618477fca071a1a99243f4bc1d6e78792e9",
+    "bytes": 260
+  },
+  {
+    "path": "qualified-run-1/junit.xml",
+    "sha256": "b942d651ade87c88d029f3e551f1a3297575191837209b6455c39dd5ff2b439d",
+    "bytes": 2818
+  },
+  {
+    "path": "qualified-run-1/pytest.log",
+    "sha256": "29a64d4ca403d73d0d57b91f372310dda68b49661d6e1526ea67d469570b5c10",
+    "bytes": 99
+  },
+  {
+    "path": "qualified-run-1/scenarios/concurrent-attempts.json",
+    "sha256": "f5769a1897df2d00df8ab7ae508bd52b439f75996cbbf2e1e5a86946173785a9",
+    "bytes": 9862
+  },
+  {
+    "path": "qualified-run-1/scenarios/concurrent-decisions.json",
+    "sha256": "22c90e9ba213831c0bce8ca5e9fc4a045d70da4b4128cb74b20ac7c10ac048a7",
+    "bytes": 9646
+  },
+  {
+    "path": "qualified-run-1/scenarios/concurrent-mixed.json",
+    "sha256": "cd0cd2e8ee8e7f17ef6cf94b5b5668fbda5884b8d47c42a688b2f5f89db21651",
+    "bytes": 33886
+  },
+  {
+    "path": "qualified-run-1/scenarios/concurrent-observations.json",
+    "sha256": "7fd8da151e43fc5f8b17b613c8671c6db6ff528586f2a427c4113d75697d4776",
+    "bytes": 8806
+  },
+  {
+    "path": "qualified-run-1/scenarios/concurrent-reconciliations.json",
+    "sha256": "5cefa8ef90b03a7e0480e9e2473dd7c1a5df2dd8fc97da85b4595a542cc12325",
+    "bytes": 14422
+  },
+  {
+    "path": "qualified-run-1/scenarios/termination-after.json",
+    "sha256": "4cb35a62fcaa4d9984e0427775102c7a1698c570daf82b8f10b565315c72af17",
+    "bytes": 903
+  },
+  {
+    "path": "qualified-run-1/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "qualified-run-2/junit.xml",
+    "sha256": "3566b27a0c47898f11553731e0806a0c7aac101f388a85fc5167174c14629a54",
+    "bytes": 2818
+  },
+  {
+    "path": "qualified-run-2/pytest.log",
+    "sha256": "d72e921a81b23e09b77754321c995d3e5bb6af8a9d02f6b9c3d57add7f0e8554",
+    "bytes": 99
+  },
+  {
+    "path": "qualified-run-2/scenarios/concurrent-attempts.json",
+    "sha256": "dfea370c6ee6248e4063a92be2941b5e4e7090851d52db2e46d02fcf49ee9b52",
+    "bytes": 9862
+  },
+  {
+    "path": "qualified-run-2/scenarios/concurrent-decisions.json",
+    "sha256": "5557de309656f8684af47798c2ebb7f2bb9e74c782f778ba61d89f4b1d507b5c",
+    "bytes": 9646
+  },
+  {
+    "path": "qualified-run-2/scenarios/concurrent-mixed.json",
+    "sha256": "a3d863e34425a54b70966a85ddcf7e68d28a0453765cbac0b8d1832600916f43",
+    "bytes": 33886
+  },
+  {
+    "path": "qualified-run-2/scenarios/concurrent-observations.json",
+    "sha256": "65abef4bd3a488acb1026212d6c7051d84edc852d438840b36e0586664b97518",
+    "bytes": 8806
+  },
+  {
+    "path": "qualified-run-2/scenarios/concurrent-reconciliations.json",
+    "sha256": "cfed0f700dcb7a3d81bedaa31a220c4d554b94f972340cce9b2494bc39c600d3",
+    "bytes": 14422
+  },
+  {
+    "path": "qualified-run-2/scenarios/termination-after.json",
+    "sha256": "4cb35a62fcaa4d9984e0427775102c7a1698c570daf82b8f10b565315c72af17",
+    "bytes": 903
+  },
+  {
+    "path": "qualified-run-2/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "raw-evidence.tar.xz",
+    "sha256": "b20f55451fd25c320c6220d3676f2b0148ad6fd46821d7c8efd304515c5db280",
+    "bytes": 11080
+  },
+  {
+    "path": "release-full/junit.xml",
+    "sha256": "94d0dec41bb56ca6ff8a0fcbff385b56066f054cfd17a6b4ba26cc65fedcfbff",
+    "bytes": 18772
+  },
+  {
+    "path": "release-full/pytest.log",
+    "sha256": "63527a1fbc650dd299f682baf69a6a0c92ec7be515207d89a1e4799088255a33",
+    "bytes": 260
+  },
+  {
+    "path": "release-run-1/junit.xml",
+    "sha256": "56ad37a0cbfb82eaf47494ff934e072fddbefd57409d3e4a5d8bd521cd136bab",
+    "bytes": 2818
+  },
+  {
+    "path": "release-run-1/pytest.log",
+    "sha256": "18a12f238760b465d04acb6b4a6a5b6496279a37742e788f74fafc7bcc745f0c",
+    "bytes": 99
+  },
+  {
+    "path": "release-run-1/scenarios/concurrent-attempts.json",
+    "sha256": "3c66e4aac89e8653a1c2c8f78b7353d2972a67052b605dafc8ab8ce374056c42",
+    "bytes": 9862
+  },
+  {
+    "path": "release-run-1/scenarios/concurrent-decisions.json",
+    "sha256": "c0972a0d284413bcd21b44d5584e8ecc011350496e205d59da2aeff5e4a13eae",
+    "bytes": 9646
+  },
+  {
+    "path": "release-run-1/scenarios/concurrent-mixed.json",
+    "sha256": "9aa9677a6567e8755f0a20cf4583bebcaad9dbd79b071b2dd123e8b3f83f8fe6",
+    "bytes": 33886
+  },
+  {
+    "path": "release-run-1/scenarios/concurrent-observations.json",
+    "sha256": "722a821f6d282a1e9bf56e8ecec4cc6f0d26e40e39bd442bd2e56d4271b3f727",
+    "bytes": 8806
+  },
+  {
+    "path": "release-run-1/scenarios/concurrent-reconciliations.json",
+    "sha256": "0c1481900cf252df89ce8dc9fe8a7e6b6aa172e11f30bbbcc375085b86c47103",
+    "bytes": 14422
+  },
+  {
+    "path": "release-run-1/scenarios/termination-after.json",
+    "sha256": "4cb35a62fcaa4d9984e0427775102c7a1698c570daf82b8f10b565315c72af17",
+    "bytes": 903
+  },
+  {
+    "path": "release-run-1/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "release-run-2/junit.xml",
+    "sha256": "250e5799d1a5fffa52f381b758ba5e897f37e7d5643b3d9fa1d8bbb1a57255bd",
+    "bytes": 2818
+  },
+  {
+    "path": "release-run-2/pytest.log",
+    "sha256": "364c36c7c72549a5860732319e0b3ae0a82233c5c24f71a59677fceb0ff15ad2",
+    "bytes": 99
+  },
+  {
+    "path": "release-run-2/scenarios/concurrent-attempts.json",
+    "sha256": "49fc4d7ca7ee3a04b20db9e345cc0b3c3cfa0122f6c57c19d036fcc88f07189e",
+    "bytes": 9862
+  },
+  {
+    "path": "release-run-2/scenarios/concurrent-decisions.json",
+    "sha256": "bee6a36cfbcfdb0582b6bd745f1268f6a97fabba6751b4f3ba382c16eae72b67",
+    "bytes": 9646
+  },
+  {
+    "path": "release-run-2/scenarios/concurrent-mixed.json",
+    "sha256": "c2009f883b9813f4d2ad78b7f892fd50b5a4a40267bf7f4066fb9565af74365b",
+    "bytes": 33886
+  },
+  {
+    "path": "release-run-2/scenarios/concurrent-observations.json",
+    "sha256": "494f95e9115cf10d23018fd43a46a83d16305bcc356e96b9e761185336a2c795",
+    "bytes": 8806
+  },
+  {
+    "path": "release-run-2/scenarios/concurrent-reconciliations.json",
+    "sha256": "065ce4e7d49dc110f2eca131c7b1a62bffeece3b6689ee350192e04ffe5e59b0",
+    "bytes": 14422
+  },
+  {
+    "path": "release-run-2/scenarios/termination-after.json",
+    "sha256": "4cb35a62fcaa4d9984e0427775102c7a1698c570daf82b8f10b565315c72af17",
+    "bytes": 903
+  },
+  {
+    "path": "release-run-2/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "run-1/pytest.log",
+    "sha256": "895361ffbf88d5a8c40d47f8dd3d03df2042ca9360d08738bcbb4faa39495404",
+    "bytes": 6
+  },
+  {
+    "path": "run-1/scenarios/concurrent-attempts.json",
+    "sha256": "57fc59eeae25be0a7f19f20c51f9342dad12666eeeba23858e270c515425ac57",
+    "bytes": 9862
+  },
+  {
+    "path": "run-1/scenarios/concurrent-decisions.json",
+    "sha256": "3a9adddef00aa841c0e330ed9b2564daa1b61a1c03d1eaa2ad662a1905443a33",
+    "bytes": 9646
+  },
+  {
+    "path": "run-1/scenarios/concurrent-mixed.json",
+    "sha256": "4c310d7ee491fbd376f2159283032e9d97f51c7aa6d8806098b884e24dae06e4",
+    "bytes": 33886
+  },
+  {
+    "path": "run-1/scenarios/concurrent-observations.json",
+    "sha256": "da9c69cbc93578f65b61325cafd7d9df5fd0ada2cb6c8e0e3f54f898a7600bb5",
+    "bytes": 8806
+  },
+  {
+    "path": "run-1/scenarios/concurrent-reconciliations.json",
+    "sha256": "35cca5bae274e2b60844007fb5a7888342d0407c17b5d0af1313b945a5c0400b",
+    "bytes": 14422
+  },
+  {
+    "path": "run-1/scenarios/termination-before.json",
+    "sha256": "fef3d561d2c193589bd17dd6d163b4653bb6215cd90ce483d336f28f84f7bed9",
+    "bytes": 655
+  },
+  {
+    "path": "summary.json",
+    "sha256": "6d868b7f2b0b6981ea5ebbf584dd81e28b865d0f2d4f1a7bbdd48f39e9aef0a3",
+    "bytes": 2964
+  }
+]
