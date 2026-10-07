@@ -1,4 +1,4 @@
-# Agent Control Plane — Business Collateral
+# Cognous Control Plane — Business Collateral
 
 ## 1. Executive Summary
 
