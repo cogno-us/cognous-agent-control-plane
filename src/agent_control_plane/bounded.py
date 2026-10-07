@@ -180,6 +180,8 @@ class Resolver(Protocol):
     def conflict_status(self, requirement_id: str) -> ConflictStatus | None: ...
     def evidence_status(self, obligation_id: str) -> EvidenceStatus | None: ...
     def role_mapping(self, institution_id: str) -> RoleMappingStatus | None: ...
+    def authority_effect_handoff(self, ref: str): ...
+    def authority_effect_snapshot(self, ref: str) -> dict | None: ...
 
 
 class AuthorizationBinding(BaseModel):
@@ -387,6 +389,7 @@ class SyntheticResolver:
         self.conflicts = conflicts
         self.evidence = evidence
         self.role_mappings = role_mappings
+        self._authority_effect_lock = threading.RLock()
 
     def authority_context(self, ref: str) -> dict | None:
         return copy.deepcopy(self.contexts.get(ref))
@@ -438,6 +441,47 @@ class SyntheticResolver:
     def role_mapping(self, institution_id: str) -> RoleMappingStatus | None:
         value = self.role_mappings.get(institution_id)
         return value.model_copy(deep=True) if value else None
+
+    @contextmanager
+    def authority_effect_handoff(self, ref: str):
+        """Hold the synthetic authority snapshot stable through trusted provisioning.
+
+        This is a same-process test implementation. A real resolver claiming this
+        handoff contract must ensure every authority-invalidating writer
+        participates in the same exclusion mechanism.
+        """
+        with self._authority_effect_lock:
+            yield
+
+    def authority_effect_snapshot(self, ref: str) -> dict | None:
+        """Return one coherent projection for local claim issuance."""
+        context = self.contexts.get(ref)
+        if context is None:
+            return None
+        grant = context.get("grant") or {}
+        requirement = context.get("requirement") or {}
+        return {
+            "context": copy.deepcopy(context),
+            "grant_status": (
+                self.statuses[grant["grant_id"]].model_copy(deep=True)
+                if grant.get("grant_id") in self.statuses else None
+            ),
+            "approvals": {
+                approval_ref: self.approvals[approval_ref].model_copy(deep=True)
+                for approval_ref in grant.get("approval_refs", [])
+                if approval_ref in self.approvals
+            },
+            "policies": {
+                item["ref"]: self.policies[item["ref"]].model_copy(deep=True)
+                for item in grant.get("policy_versions", [])
+                if item.get("ref") in self.policies
+            },
+            "evidence": {
+                item["obligation_id"]: self.evidence[item["obligation_id"]].model_copy(deep=True)
+                for item in requirement.get("evidence", [])
+                if item.get("obligation_id") in self.evidence
+            },
+        }
 
 
 class LocalRefundDestination:
