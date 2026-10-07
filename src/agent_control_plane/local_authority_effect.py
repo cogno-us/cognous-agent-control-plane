@@ -114,19 +114,28 @@ def _utc(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _operation_payload(proposal: RuntimeProposal, decision: RuntimeDecision) -> dict[str, Any]:
+def _operation_payload(
+    proposal: RuntimeProposal,
+    decision: RuntimeDecision,
+    *,
+    institution_id: str,
+    authority_domain: str,
+) -> dict[str, Any]:
     binding = decision.binding
     if binding is None:
         raise PermissionError("authorized decision is missing an authorization binding")
     return {
         "actor": proposal.actor,
         "principal": proposal.principal,
+        "institution_id": institution_id,
+        "authority_domain": authority_domain,
         "manifest_id": proposal.manifest_id,
         "manifest_version": proposal.manifest_version,
         "manifest_digest": proposal.manifest_digest,
         "action_id": proposal.action_id,
         "adapter_id": proposal.adapter_id,
         "target": proposal.target,
+        "payload": copy.deepcopy(proposal.payload),
         "payload_commitment": proposal.payload_commitment,
         "requested_permissions": list(proposal.requested_permissions),
         "amount": proposal.amount,
@@ -244,7 +253,12 @@ def materialize_local_execution_claim(
     approval_dump = [item.model_dump(mode="json") for item in approvals]
     policy_dump = [item.model_dump(mode="json") for item in policies]
     evidence_dump = [item.model_dump(mode="json") for item in evidence]
-    operation_commitment = commitment(_operation_payload(proposal, decision))
+    operation_commitment = commitment(_operation_payload(
+        proposal,
+        decision,
+        institution_id=institution.get("institution_id"),
+        authority_domain=institution.get("authority_domain"),
+    ))
     authority_state = {
         "grant_id": current.grant_id,
         "grant_revision": current.grant_revision,
