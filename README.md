@@ -15,431 +15,95 @@
 
 # Agent Control Plane
 
-**Runtime control and replay for AI agents.**
+**Evaluate proposals against authority and preserve the decision record.**
 
-Agent Control Plane is a minimal runtime governance layer for AI-agent
-workflows. It records proposed actions, policy decisions, blocked
-operations, authority context, external-source reliance, and replayable run
-traces.
+## Overview
 
-> This repository is intentionally minimal. It is not an agent framework,
-> not a model runtime, and not a complete enterprise governance platform.
-> It is a reference implementation for deterministic policy gating and
-> replayable agent-run records.
+A Python reference implementation for bounded agent authorization, effect-time revalidation and persistent runtime records. It connects declared actions, independently resolved authority, execution attempts and reconciliation without treating an earlier decision as a permanent credential.
 
----
+**Implementation status:** this README describes merged public reference work. Component acceptance, selection in the hub and execution of a qualification are separate facts. The selected revision for this component is `248d899634d9db3518e831bc7ab568a48733f825`; the [hub lock](https://github.com/cogno-us/cognous-open-control-stack/blob/5737267d94d2b445735c95e8480a31de73a2abe8/component-lock.json) is the source of that integration choice.
 
-## Contents
+## Purpose and intended users
 
-1. [What it is](#what-it-is)
-2. [Why it matters](#why-it-matters)
-3. [What this MVP records](#what-this-mvp-records)
-4. [What this is not](#what-this-is-not)
-5. [Quickstart](#quickstart)
-6. [Examples](#examples)
-7. [Optional signed replay bundles](#optional-signed-replay-bundles)
-8. [Policy configuration example](#policy-configuration-example)
-9. [Framework integration pattern](#framework-integration-pattern)
-10. [Policy evaluation traces](#policy-evaluation-traces)
-11. [Semantic validation](#semantic-validation)
-12. [Redacted exports](#redacted-exports)
-13. [Tool adapter execution](#tool-adapter-execution)
-14. [CLI](#cli)
-15. [Persistence adapters](#persistence-adapters)
-16. [Architecture](#architecture)
-17. [Core concepts](#core-concepts)
-18. [JSON schemas](#json-schemas)
-19. [Tests](#tests)
-20. [Roadmap](#roadmap)
-21. [Security](#security)
-22. [License](#license)
+Organizations need to distinguish what an agent proposed from what policy allowed and what a destination actually did. A cached approval or fluent explanation cannot answer whether authority, evidence and approvals were still valid when an effect was attempted.
 
----
+Engineers can inspect the reference contracts and examples; enterprise architecture, security and governance reviewers can examine the boundary and evidence. Evaluate this component for its named responsibility rather than as a complete governance platform.
 
-## What it is
+## Key features
 
-Agent Control Plane is a thin Python package that sits beside an AI agent
-and records what the agent proposed, what was allowed or blocked, what
-external sources it relied on, and how the run can be replayed or audited.
+| Capability | Implemented or specified responsibility |
+|---|---|
+| **Bounded authorization** | Evaluate Manifest-bound proposals using the trusted Authority Context resolver and explicit policy. |
+| **Effect-time checks** | Revalidate authorization-critical inputs before the supported execution path reaches a destination. |
+| **Lifecycle records** | Keep decisions, attempts, observations and reconciliation distinguishable, including unknown acknowledgements. |
+| **Persistent record transactions** | Reload and append under a stable Linux sidecar flock with atomic replacement and explicit persistence failures. |
+| **Developer tools** | Use run validation, policy examples, replay export, redaction and integrity helpers with their documented assurance limits. |
 
-It provides:
+## How it works
 
-- A **deterministic policy gate** that evaluates action proposals against a
-  Frame (allowed tools, blocked tools, authority records) and returns a
-  stable result plus a verifiable deterministic fingerprint.
-- A **RunRecorder** that accumulates all run events into a structured
-  `RunRecord`.
-- A **ReplayBundle** generator that produces a self-contained, portable
-  snapshot of any completed run.
-- **JSON export** for all records.
-- **JSON Schema** files for all core objects.
+A synthetic refund is proposed under a bounded grant. The controller records its decision, rechecks current authority at effect time and invokes the constrained adapter. After a timeout, reconciliation concerns the original effect. Fresh observed absence does not authorize a replacement; accepted applied evidence can resolve delivery while preserving the interrupted acknowledgement history.
 
----
+A valid signature, chain inclusion, message receipt, reasoning instruction or evidence-package digest does not authorize execution. Institutional authority must be supplied and evaluated through the appropriate trusted boundary.
 
-## Why it matters
+## Getting started
 
-AI agents can call tools, read databases, send messages, and modify files.
-Without a control layer:
-
-- There is no record of what was proposed vs. what was executed.
-- Blocked actions leave no trace.
-- It is impossible to replay a run to verify what happened.
-- External-source reliance is opaque.
-- Policy decisions may be inconsistent.
-
-Agent Control Plane addresses all of these gaps with a lightweight,
-auditable record-keeping layer.
-
----
-
-## What this MVP records
-
-| Record | Description |
-|--------|-------------|
-| `Frame` | Execution context: actor, environment, allowed/blocked tools, policy version |
-| `ActionProposal` | Every action the agent proposed, before execution |
-| `PolicyDecision` | Allow / block / escalate outcome for each proposal, with fingerprint |
-| `BlockedAction` | Automatically created when a decision is `"block"` |
-| `AuthorityRecord` | Scoped permissions granted to the actor for the run |
-| `RelianceRecord` | External sources and tools the agent relied on |
-| `ReplayBundle` | Self-contained snapshot of a completed run |
-
----
-
-## What this is not
-
-- **Not an agent framework** – it does not run agents, schedule tasks, or
-  manage model calls.
-- **Not a model runtime** – it does not load or execute language models.
-- **Not a complete enterprise governance platform** – it is a reference
-  implementation for deterministic policy gating and replayable records.
-- **Not a security boundary by itself** – the policy gate enforces what you
-  define; bad policy configuration is not detected.
-
----
-
-## Limitations
-
-- No built-in tool integrations are included; callers provide optional tool adapters.
-- No production key-management workflow is included.
-- No persistence backend beyond the simple filesystem adapter is included.
-- No full policy DSL is included.
-- No dashboard or replay viewer yet.
-- Correctness depends on the policy rules supplied by the implementer.
-
----
-
-## Quickstart
+From a fresh repository checkout, use Python 3.11+ and an activated virtual environment. Install only into that environment. Package installation needs network access; the commands below exercise local reference tooling. For the full selected integration, use the [hub quickstart](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/quickstart.md), whose runner supplies exact producer checkouts and test wiring.
 
 ```bash
-pip install -e ".[dev]"
-pytest
-acp validate-run examples/sample_run_record.json
-```
-
-```python
-from agent_control_plane import RunRecorder
-
-recorder = RunRecorder()
-recorder.start_run(
-    task="Summarize customer record and draft email.",
-    actor="agent-v1",
-    environment="production",
-    allowed_tools=["crm_read", "notes_search"],
-    blocked_tools=["email_send"],
-    policy_version="v1.0",
-)
-
-recorder.add_authority_record(
-    actor="agent-v1",
-    scope=["read"],
-    source="user_consent",
-)
-
-# Allowed action
-action = recorder.propose_action(
-    tool_name="crm_read",
-    action_type="read",
-    target="customer:42",
-)
-decision, blocked = recorder.evaluate_action(action)
-print(decision.result)  # "allow"
-
-# Blocked action
-send = recorder.propose_action(
-    tool_name="email_send",
-    action_type="external_send",
-    target="customer@example.com",
-)
-decision, blocked = recorder.evaluate_action(send)
-print(decision.result)  # "block"
-
-recorder.complete_run("Draft prepared but email blocked.")
-recorder.export_json("run_record.json")
-bundle = recorder.generate_replay_bundle()
-```
-
----
-
-## Examples
-
-Run the included examples from the repository root:
-
-```bash
-python examples/simple_agent_run.py
-python examples/tool_policy_demo.py
-python examples/policy_config_demo.py
-python examples/framework_integration_demo.py
-python examples/tool_adapter_demo.py
-```
-
-`examples/sample_run_record.json` shows a realistic output from
-`simple_agent_run.py`.
-
----
-
-## Optional signed replay bundles
-
-Replay bundles can be signed with HMAC-SHA256 for optional export integrity
-verification.
-
-```python
-from agent_control_plane import sign_replay_bundle, verify_signed_replay_bundle
-
-signed = sign_replay_bundle(bundle, "shared-secret")
-assert verify_signed_replay_bundle(signed, "shared-secret")
-```
-
-This adds integrity metadata to exported replay bundles. It is not production
-key management and not a complete security boundary by itself.
-
----
-
-## Policy configuration example
-
-`examples/policy_config.json` shows a small JSON policy file with:
-
-- allow and block lists for tools
-- simple authority requirements by action type
-- a policy version and default action label
-
-Use it to derive a `Frame` without introducing a full policy DSL:
-
-```bash
-python examples/policy_config_demo.py
-```
-
----
-
-## Framework integration pattern
-
-`examples/framework_integration_demo.py` shows how a framework adapter can sit
-beside this package:
-
-1. the agent proposes an action
-2. `RunRecorder` records and evaluates it
-3. only allowed actions execute
-4. reliance is recorded when an action is used
-5. the run completes and produces a replay bundle
-
-The example uses a mock adapter and no external credentials. The same pattern
-can be adapted to LangChain, OpenAI Agents, or other agent frameworks.
-
----
-
-## Policy evaluation traces
-
-`PolicyGate.evaluate_with_trace()` returns the same policy decision result as
-`evaluate()`, plus an ordered `PolicyEvaluationTrace`. Each trace records the
-rule path, the matching rule, the final result, and the same deterministic
-fingerprint stored on the `PolicyDecision`. `RunRecorder` stores traces by
-default and includes them in `RunRecord` and `ReplayBundle` exports.
-
----
-
-## Semantic validation
-
-`validate_run_record()` and `validate_replay_bundle()` check more than Pydantic
-structure. They verify run ID consistency, action references, blocked-action
-links, policy trace relationships, and missing outputs. Validation produces a
-compact `ValidationReport` with warning and error issues. CLI validation uses
-these reports and does not print full records.
-
----
-
-## Redacted exports
-
-`redact_run_record()` and `redact_replay_bundle()` return deep copies with
-privacy-safe redaction. Payloads are redacted by default, and optional settings
-can also redact targets, final output, and recorded reasons. IDs, timestamps,
-decision results, fingerprints, and trace relationships are preserved so the
-export remains useful for replay and audit workflows.
-
----
-
-## Tool adapter execution
-
-`execute_with_control()` is a small adapter pattern for public-safe tool
-execution. It records an action proposal, evaluates it through the policy gate,
-and only calls a provided `ToolAdapter` when the decision result is `"allow"`.
-Successful executions can add a reliance record without turning this package
-into a full agent framework. See `examples/tool_adapter_demo.py`.
-
----
-
-## CLI
-
-The package includes a small CLI for validation, redaction, and signing:
-
-```bash
-acp validate-run examples/sample_run_record.json
-acp validate-replay path/to/replay_bundle.json
-acp redact-run examples/sample_run_record.json --out path/to/redacted_run_record.json
-acp redact-replay path/to/replay_bundle.json --out path/to/redacted_replay_bundle.json --reasons
-acp sign-replay path/to/replay_bundle.json --secret "shared-secret" --out path/to/signed_replay_bundle.json
-acp verify-signed-replay path/to/signed_replay_bundle.json --secret "shared-secret"
-```
-
-Commands return:
-
-- `0` on success
-- `1` on validation or signature failure
-- `2` on usage or file lookup errors
-
----
-
-## Persistence adapters
-
-`FileSystemPersistenceAdapter` provides a minimal reference implementation for
-storing run records and replay bundles as JSON files under a local directory.
-It is intentionally small and does not attempt to be a production storage
-platform.
-
----
-
-## Architecture
-
-```
-Agent Task
-   ↓
-Frame
-   ↓
-Action Proposal
-   ↓
-Policy Gate
-   ↓
-Allow / Block / Escalate
-   ↓
-Run Record
-   ↓
-Replay Bundle
-```
-
-See [docs/architecture.md](docs/architecture.md) for full details.
-
-Identical inputs produce the same result and `deterministic_fingerprint`.
-The `decision_id` and `decided_at` fields are generated per evaluation.
-
----
-
-## Core concepts
-
-| Concept | Summary |
-|---------|---------|
-| **Frame** | Immutable execution context for a run |
-| **ActionProposal** | Proposed tool call, recorded before execution |
-| **PolicyDecision** | Gate outcome with stable result and fingerprint; IDs and timestamps are per evaluation |
-| **BlockedAction** | Auto-created record for every blocked decision |
-| **AuthorityRecord** | Scoped permission grant for the run |
-| **RelianceRecord** | External-source dependency record |
-| **ReplayBundle** | Self-contained run snapshot for audit/replay |
-
-See [docs/concepts.md](docs/concepts.md) for detailed definitions.
-
----
-
-## JSON schemas
-
-JSON Schema Draft 2020-12 files are in the `schemas/` directory:
-
-| File | Describes |
-|------|-----------|
-| `schemas/frame.schema.json` | `Frame` |
-| `schemas/run_record.schema.json` | `RunRecord` |
-| `schemas/action_proposal.schema.json` | `ActionProposal` |
-| `schemas/policy_decision.schema.json` | `PolicyDecision` |
-| `schemas/policy_rule_evaluation.schema.json` | `PolicyRuleEvaluation` |
-| `schemas/policy_evaluation_trace.schema.json` | `PolicyEvaluationTrace` |
-| `schemas/authority_record.schema.json` | `AuthorityRecord` |
-| `schemas/reliance_record.schema.json` | `RelianceRecord` |
-| `schemas/validation_issue.schema.json` | `ValidationIssue` |
-| `schemas/validation_report.schema.json` | `ValidationReport` |
-| `schemas/redaction_config.schema.json` | `RedactionConfig` |
-| `schemas/tool_execution_result.schema.json` | `ToolExecutionResult` |
-| `schemas/replay_bundle.schema.json` | `ReplayBundle` |
-| `schemas/signed_replay_bundle.schema.json` | `SignedReplayBundle` |
-
----
-
-## Tests
-
-```bash
-pip install -e ".[dev]"
-pytest
-python examples/policy_config_demo.py
-python examples/framework_integration_demo.py
-python examples/tool_adapter_demo.py
+python -m pip install -e ".[dev]"
 acp --help
 acp validate-run examples/sample_run_record.json
+python examples/policy_config_demo.py
 ```
 
-Test coverage:
+## Evidence and supported scope
 
-- `test_policy_gate.py` – allow, block, and escalate decisions; external-send authority
-- `test_frame_immutability.py` – frozen Frame behavior
-- `test_blocked_action.py` – blocked-action record creation
-- `test_replay_bundle.py` – bundle completeness and JSON round-trip
-- `test_reliance_record.py` – reliance record creation and linkage
-- `test_determinism.py` – fingerprint stability and JSON export round-trip
-- `test_run_recorder.py` – recorder action/run validation
-- `test_signing.py` – replay bundle signing and verification
-- `test_policy_config.py` – config loading and demo behavior
-- `test_policy_traces.py` – evaluation trace generation and recorder storage
-- `test_validation.py` – semantic validation report behavior
-- `test_redaction.py` – redacted export helpers
-- `test_tool_adapter.py` – tool adapter execution flow
-- `test_framework_integration_demo.py` – mock framework adapter example
-- `test_cli.py` – CLI validation and signing commands
-- `test_persistence.py` – filesystem persistence round-trips
+The selected persistence repair is `248d899634d9db3518e831bc7ab568a48733f825`. The accepted hub generation includes the repair and compatible consumers. Twenty upstream persistence qualification cases ran in each release repetition; historical record-loss results at the older pin remain preserved, not rewritten.
 
----
+The accepted [hub persistence-generation evidence](https://github.com/cogno-us/cognous-open-control-stack/blob/5737267d94d2b445735c95e8480a31de73a2abe8/examples/control-plane-store-adoption/qualification-summary.json) records 915 Python tests in each of two repetitions, 35 matrix entries satisfying their gates and 120 separate mocked OpenShell tests. Those are aggregate hub results, not a per-component test count or a claim of production readiness. Optional behavioral layers receive static checks only. The [support ledger](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/release-status.md) separates implementation, execution and adoption.
 
-## Roadmap
+## Limitations and deployment decisions
 
-See [docs/roadmap.md](docs/roadmap.md).
+The repaired store supports cooperating writers on documented local Linux filesystems with shared canonical-path assumptions. Individual record transactions are protected; the entire decide/execute/reconcile workflow is not atomic. Production resolver authentication, distributed budgets, remote finality and exactly-once delivery are not established.
 
-- **Phase 1** – Deterministic policy gate and run records *(current)*
-- **MVP extensions** – Signed replay bundles, policy traces, semantic validation, redacted exports, tool adapter execution, policy config helpers, CLI support, framework integration example, filesystem persistence
-- **Phase 2** – Optional replay viewer and richer config tooling
-- **Phase 3** – Broader integration hooks and richer export utilities
-- **Phase 4** – Deeper action classification and context-change records
-- **Phase 5** – Additional ecosystem integrations
+Review original artifacts and their exact source revisions before extending a claim to a new environment. New dependencies, authority sources, destinations or enforcement mechanisms need their own compatibility and qualification. A passing reference case is not a certification of an enterprise deployment.
+
+## Repository guide
+
+Use these sources for details; their historical checkpoints retain the status and scope of the work they recorded:
+
+- [docs/bounded_authorization_effect.md](docs/bounded_authorization_effect.md)
+- [docs/record-store-persistence.md](docs/record-store-persistence.md)
+- [docs/workstreams/store-concurrency-checkpoint.md](docs/workstreams/store-concurrency-checkpoint.md)
+- [docs/threat-model-lite.md](docs/threat-model-lite.md)
+
+For a nontechnical introduction, read the [business overview](collateral/business-collateral.md) and [one-page overview](collateral/one-page-overview.md). Both describe this component's role and evidence limits, not additional runtime features.
+
+## Contributing and attribution
+
+[Contribution guidance](CONTRIBUTING.md) describes review and validation expectations. Keep evidence-linked claims, preserve historical records and separate proposed features from accepted implementation.
+
+See [LICENSE](LICENSE) and [attribution](NOTICE) for the existing terms and third-party scope. Developed by [Cognous](https://cogno.us); no licensing change is part of this documentation update.
 
 ---
 
-## Security
+## Cognous stack components
 
-See [SECURITY.md](SECURITY.md) for the vulnerability reporting policy.
+[Stack hub](https://github.com/cogno-us/cognous-open-control-stack) · [Selected pins](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json) · [Evidence and limits](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/release-status.md)
 
----
+Component links are navigation, not a requirement to install every component. The hub lock determines its supported integration.
 
-## License
-
-Apache-2.0.  See [LICENSE](LICENSE).
-
-### Bounded record-store concurrency
-
-`BoundedRecordStore` serializes same-host append/read transactions on supported
-Linux local filesystems. This does not make destination execution or the whole
-workflow atomic. See [persistence scope and recovery](docs/record-store-persistence.md)
-and the [qualification checkpoint](docs/workstreams/store-concurrency-checkpoint.md).
+| Component | Responsibility |
+|---|---|
+| [Agent Action Manifest](https://github.com/cogno-us/cognous-agent-action-manifest) | Declare the action before evaluating permission |
+| [Agent Replay Bundle](https://github.com/cogno-us/cognous-agent-replay-bundle) | Reconstruct what the retained records support |
+| [Agent Governance Evidence Pack](https://github.com/cogno-us/cognous-agent-governance-evidence-pack) | Turn traceable runtime records into reviewable governance evidence |
+| [Open Decision Evidence Standard](https://github.com/cogno-us/open-decision-evidence-standard) | Portable decision evidence across system and organizational boundaries |
+| [Alvorada Experimental Workbench](https://github.com/cogno-us/alvorada) | Governed exchange and continuity for a bounded synthetic workflow |
+| [Moltbot Safe](https://github.com/cogno-us/moltbot-safe) | Constrained execution beneath independent current authorization |
+| [BitRep](https://github.com/cogno-us/bitrep) | Verify issuer signatures under explicit trust assumptions |
+| [The Index](https://github.com/cogno-us/the-index) | A local blockchain reference for claims, evidence commitments and lifecycle history |
+| [Portable Reasoning Protocol v1.0](https://github.com/cogno-us/portable-reasoning-protocol) | Portable instructions for evidence-bounded reasoning |
+| [Research Intelligence Protocol v1.0](https://github.com/cogno-us/research-intelligence-protocol) | Disciplined discovery and cross-domain abstraction, kept separate |
+| [TFA Protocol (S43)](https://github.com/cogno-us/truth-freedom-agency-protocol) | Truth · Freedom · Agency |
+| [Constitutional Governance for Institutions](https://github.com/cogno-us/constitutional-governance-for-institutions) | Alvorada: authority, challenge and correction for institutions |
