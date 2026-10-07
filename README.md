@@ -436,3 +436,10 @@ See [SECURITY.md](SECURITY.md) for the vulnerability reporting policy.
 ## License
 
 Apache-2.0.  See [LICENSE](LICENSE).
+
+### Bounded record-store concurrency
+
+`BoundedRecordStore` serializes same-host append/read transactions on supported
+Linux local filesystems. This does not make destination execution or the whole
+workflow atomic. See [persistence scope and recovery](docs/record-store-persistence.md)
+and the [qualification checkpoint](docs/workstreams/store-concurrency-checkpoint.md).

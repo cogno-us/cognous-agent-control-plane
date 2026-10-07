@@ -6,10 +6,18 @@ import hashlib
 import json
 import os
 import threading
+import tempfile
+import sys
+from contextlib import contextmanager
+
+try:
+    import fcntl
+except ImportError:  # Unsupported platforms must fail closed, not use thread-only writes.
+    fcntl = None
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Iterator, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -257,24 +265,69 @@ class BoundedRunRecord(BaseModel):
 
 
 class BoundedRecordStore:
-    """Durable JSON event store used only by the bounded synthetic pilot."""
+    """Same-host JSON records with Linux local-filesystem transaction protection.
+
+    All writers must use this implementation and the same canonical path. The
+    persistent sidecar lock must never be unlinked while clients may be active.
+    This transaction covers records only, not destination execution.
+    """
 
     def __init__(self, path: str | Path, run_id: str):
-        self.path = Path(path)
+        self.path = Path(path).resolve()
         self.run_id = run_id
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        if not self.path.exists():
-            self._write(BoundedRunRecord(run_id=run_id))
+        self._lock_path = self.path.with_name(self.path.name + ".lock")
+        self._require_local_locking()
+        with self._transaction():
+            if self.path.exists():
+                self._read_document()  # Corruption must not initialize an empty store.
+            else:
+                self._write(BoundedRunRecord(run_id=run_id).model_dump(mode="json"))
+
+    def _require_local_locking(self) -> None:
+        if sys.platform != "linux" or fcntl is None:
+            raise RuntimeError("BoundedRecordStore requires Linux local filesystem flock support")
+        # Fail closed for network/FUSE/unknown filesystems rather than assuming
+        # their flock/rename/fsync semantics match a local filesystem.
+        supported = {"ext2", "ext3", "ext4", "xfs", "btrfs", "tmpfs", "overlay"}
+        mounts = []
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            left, right = line.split(" - ", 1)
+            mount = left.split()[4]
+            for code, char in (("\\040", " "), ("\\011", "\t"), ("\\012", "\n"), ("\\134", "\\")):
+                mount = mount.replace(code, char)
+            mount_path = Path(mount)
+            if self.path.parent == mount_path or mount_path in self.path.parent.parents:
+                mounts.append((len(mount_path.parts), right.split()[0]))
+        if not mounts or max(mounts, key=lambda item: item[0])[1] not in supported:
+            raise RuntimeError("BoundedRecordStore filesystem is not supported for local locking")
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        with self._lock:
+            # No persistent descriptor survives between transactions.
+            # Lock the stable sidecar inode, never the atomically replaced data inode.
+            fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                os.close(fd)  # Kernel also releases the lock when a process dies.
+
+    def _read_document(self) -> dict:
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        BoundedRunRecord.model_validate(document)
+        return document
 
     def load(self) -> BoundedRunRecord:
-        with self._lock:
-            return BoundedRunRecord.model_validate_json(self.path.read_text(encoding="utf-8"))
+        """Read a complete, validated record under the same interprocess lock."""
+        with self._transaction():
+            return BoundedRunRecord.model_validate(self._read_document())
 
     def decision(self, decision_id: str) -> RuntimeDecision | None:
-        with self._lock:
-            matches = [d for d in self.load().decisions if d.decision_id == decision_id]
-            return matches[0] if len(matches) == 1 else None
+        matches = [d for d in self.load().decisions if d.decision_id == decision_id]
+        return matches[0] if len(matches) == 1 else None
 
     def append_decision(self, value: RuntimeDecision) -> None:
         self._append("decisions", value)
@@ -289,15 +342,33 @@ class BoundedRecordStore:
         self._append("reconciliations", value)
 
     def _append(self, field: str, value: BaseModel) -> None:
-        with self._lock:
-            record = self.load()
-            getattr(record, field).append(value.model_copy(deep=True))
-            self._write(record)
+        with self._transaction():
+            # Reload inside the transaction: stale instances cannot overwrite a
+            # newer successful append. Preserve historical/extension fields raw.
+            document = self._read_document()
+            document.setdefault(field, []).append(value.model_dump(mode="json"))
+            BoundedRunRecord.model_validate(document)
+            self._write(document)
 
-    def _write(self, record: BoundedRunRecord) -> None:
-        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-        tmp.write_text(record.model_dump_json(indent=2), encoding="utf-8")
-        os.replace(tmp, self.path)
+    def _write(self, document: dict) -> None:
+        """Replace the JSON document; caller must hold the transaction lock."""
+        directory_fd = os.open(self.path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        tmp = None
+        try:
+            fd, tmp = tempfile.mkstemp(prefix=self.path.name + ".", suffix=".tmp", dir=self.path.parent)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(document, stream, indent=2, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, self.path)
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except FileNotFoundError:
+                    pass
 
 
 class SyntheticResolver:

@@ -118,6 +118,9 @@ reconciliation, the safe behavior is to hold rather than claim exactly-once
 delivery.
 
 The durable JSON record and local destination are reopened in restart tests.
+The bounded record store separately protects same-host append/read transactions;
+see [record-store persistence](record-store-persistence.md). Destination and
+workflow concurrency boundaries below remain unchanged.
 
 ## Limit semantics
 
