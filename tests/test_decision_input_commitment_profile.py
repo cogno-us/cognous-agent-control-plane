@@ -66,19 +66,47 @@ def _decision_input_payload(record):
     return {key: record[key] for key in keys}
 
 
+def _recompute_requirement_obligation_refs(record, indexes):
+    by_id = {o["obligation_id"]: o["obligation_commitment"] for o in record["evidence_obligations"]}
+    for index in indexes:
+        requirement = record["institutional_requirements"][index]
+        for oid in list(requirement["obligation_commitments"]):
+            if oid in by_id:
+                requirement["obligation_commitments"][oid] = by_id[oid]
+
+
 def _materialize_case(case):
     record = copy.deepcopy(VECTORS["baseline_record"])
     for patch in case.get("patches", []):
         _apply_patch(record, patch)
-    if case.get("recompute_obligation") is not None:
-        obligation = record["evidence_obligations"][case["recompute_obligation"]]
+
+    if case.get("recompute_resolver"):
+        resolver = record["resolver_semantics"]
+        resolver["classification_semantics_commitment"] = profile.commitment(resolver["classification_semantics"])
+        new_commitment = resolver["classification_semantics_commitment"]
+        for obligation in record["evidence_obligations"]:
+            obligation["resolution_semantics_commitment"] = new_commitment
+
+    for index in case.get("recompute_obligations", []):
+        obligation = record["evidence_obligations"][index]
         obligation["obligation_commitment"] = profile.commitment(_obligation_payload(obligation))
+
+    _recompute_requirement_obligation_refs(record, case.get("recompute_requirement_obligation_refs", []))
+
+    for index in case.get("recompute_evidence_content", []):
+        item = record["evidence_items"][index]
+        item["content_commitment"] = profile.commitment(item["content"])
+    for index in case.get("recompute_evidence_provenance", []):
+        item = record["evidence_items"][index]
+        item["provenance_commitment"] = profile.commitment(item["provenance"])
+
     if case.get("recompute_candidate"):
         record["candidate"]["commitment"] = profile.commitment(record["candidate"]["materialized"])
     if case.get("recompute_context"):
         record["context"]["commitment"] = profile.commitment(record["context"]["materialized"])
     if case.get("recompute_decision_input"):
         record["decision"]["input_commitment"] = profile.commitment(_decision_input_payload(record))
+
     record["record_commitment"] = profile.commitment({k: v for k, v in record.items() if k != "record_commitment"})
     return record
 
@@ -101,6 +129,21 @@ def test_record_vectors(case):
         with pytest.raises(profile.ProfileValidationError) as exc:
             profile.verify_record(record)
         assert exc.value.code == case["expected_code"]
+
+
+def test_review_vectors_recompute_closed_input_commitments():
+    review = [case for case in VECTORS["record_vectors"] if case["id"].startswith("review-")]
+    assert len(review) >= 7
+    for case in review:
+        record = _materialize_case(case)
+        assert record["decision"]["input_commitment"] == profile.commitment(_decision_input_payload(record))
+        assert record["record_commitment"] == profile.commitment({k: v for k, v in record.items() if k != "record_commitment"})
+        for index in case.get("recompute_obligations", []):
+            obligation = record["evidence_obligations"][index]
+            assert obligation["obligation_commitment"] == profile.commitment(_obligation_payload(obligation))
+        for index in case.get("recompute_evidence_provenance", []):
+            item = record["evidence_items"][index]
+            assert item["provenance_commitment"] == profile.commitment(item["provenance"])
 
 
 def test_canonicalization_vectors():
