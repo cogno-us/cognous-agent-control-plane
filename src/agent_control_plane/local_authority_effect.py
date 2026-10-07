@@ -329,6 +329,7 @@ def _materialize_under_handoff(
         context, institution, grant, approvals, policies, evidence = _validate_issuance_snapshot(
             workflow, proposal, decision, snapshot, now=now
         )
+        grant_status = snapshot["grant_status"]
         requirement = context.get("requirement") or {}
 
         start_candidates = [_utc(grant["not_before"])]
