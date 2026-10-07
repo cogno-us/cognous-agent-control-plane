@@ -328,4 +328,27 @@ def verify_local_execution_claim(claim: LocalExecutionClaim | dict[str, Any]) ->
         return False
     if value.get("authorizing_by_possession") is not False:
         return False
+
+    approvals = value.get("approval_state")
+    policies = value.get("policy_state")
+    evidence = value.get("evidence_state")
+    if not isinstance(approvals, list) or not isinstance(policies, list) or not isinstance(evidence, list):
+        return False
+    if value.get("approval_state_commitment") != commitment(approvals):
+        return False
+    if value.get("policy_state_commitment") != commitment(policies):
+        return False
+    if value.get("evidence_state_commitment") != commitment(evidence):
+        return False
+
+    authority_state = {
+        "grant_id": value.get("grant_id"),
+        "grant_revision": value.get("grant_revision"),
+        "requirement_commitment": value.get("requirement_commitment"),
+        "approvals": approvals,
+        "policies": policies,
+        "evidence": evidence,
+    }
+    if value.get("authority_state_commitment") != commitment(authority_state):
+        return False
     return supplied == commitment(value)
