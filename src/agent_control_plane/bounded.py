@@ -235,7 +235,7 @@ class RuntimeDecision(BaseModel):
     result: Literal["authorized", "hold", "deny"]
     reasons: list[str]
     decided_at: str
-    binding: AuthorizationBinding | TenantAuthorizationBinding | None = None
+    binding: TenantAuthorizationBinding | AuthorizationBinding | None = None
 
 
 class EffectAttempt(BaseModel):
