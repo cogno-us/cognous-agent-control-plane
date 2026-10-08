@@ -41,11 +41,19 @@ class ApprovalProjection(BaseModel):
     observed_at: str
 
 
+class TenantApprovalProjection(ApprovalProjection):
+    tenant_id: str = Field(min_length=1, max_length=128)
+
+
 class PolicyProjection(BaseModel):
     ref: str
     version: str
     status: Literal["active", "superseded", "unknown"]
     observed_at: str
+
+
+class TenantPolicyProjection(PolicyProjection):
+    tenant_id: str = Field(min_length=1, max_length=128)
 
 
 class EvidenceProjection(BaseModel):
@@ -117,6 +125,8 @@ class TenantLocalExecutionClaim(LocalExecutionClaim):
 
     authorization_generation: Literal["bounded-authorization-effect/0.2"] = "bounded-authorization-effect/0.2"
     tenant_id: str = Field(min_length=1, max_length=128)
+    approval_state: list[TenantApprovalProjection]
+    policy_state: list[TenantPolicyProjection]
 
 
 def _utc(value: str) -> datetime:
@@ -229,7 +239,10 @@ def _validate_issuance_snapshot(
             or (tenant_id is not None and value.tenant_id != tenant_id)
         ):
             raise PermissionError("approval projection is not active and binding-consistent")
-        approvals.append(ApprovalProjection(
+        approval_type = TenantApprovalProjection if tenant_id is not None else ApprovalProjection
+        approval_kwargs = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        approvals.append(approval_type(
+            **approval_kwargs,
             approval_ref=value.approval_ref,
             role_id=value.role_id,
             approver=value.approver,
@@ -258,7 +271,10 @@ def _validate_issuance_snapshot(
             or (tenant_id is not None and value.tenant_id != tenant_id)
         ):
             raise PermissionError("policy projection is not active and binding-consistent")
-        policies.append(PolicyProjection(
+        policy_type = TenantPolicyProjection if tenant_id is not None else PolicyProjection
+        policy_kwargs = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        policies.append(policy_type(
+            **policy_kwargs,
             ref=value.ref,
             version=value.version,
             status=value.status,
