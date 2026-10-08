@@ -26,6 +26,8 @@ from agent_control_plane.bounded import (
     ReconciliationResult,
     RoleMappingStatus,
     RuntimeProposal,
+    TenantAuthorizationBinding,
+    TenantRuntimeProposal,
     SyntheticResolver,
     commitment,
 )
@@ -1227,3 +1229,171 @@ def test_execute_retains_unavailable_post_dispatch_observation_without_repeating
     assert recovery_observation is not None
     assert recovery_observation.state == "applied"
     assert base.snapshot() == state_after_dispatch
+
+
+# ---------------------------------------------------------------------------
+# W1 tenant-aware bounded-authorization-effect/0.2 qualification
+# ---------------------------------------------------------------------------
+
+TENANT = "tenant-alpha"
+
+
+def tenant_proposal(tenant_id=TENANT):
+    base = proposal()
+    return TenantRuntimeProposal(
+        **base.model_dump(mode="json", exclude_none=False),
+        tenant_id=tenant_id,
+    )
+
+
+def tenant_resolver_for(p, *, tenant_id=TENANT):
+    r = resolver_for(p)
+    ctx = r.contexts[PROFILE]
+    ctx["tenant_id"] = tenant_id
+    grant = ctx["grant"]
+    grant["tenant_id"] = tenant_id
+    r.statuses[grant["grant_id"]].tenant_id = tenant_id
+    approval_ref = grant["approval_refs"][0]
+    r.approvals[approval_ref].tenant_id = tenant_id
+    r.policies[POLICY_REF].tenant_id = tenant_id
+    return r
+
+
+def tenant_workflow(tmp_path, p, *, resolver=None):
+    return workflow(
+        tmp_path,
+        p,
+        resolver=resolver or tenant_resolver_for(p),
+    )
+
+
+def test_tenant_v02_valid_refund_executes_and_persists_tenant_binding(tmp_path):
+    p = tenant_proposal()
+    flow = tenant_workflow(tmp_path, p)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized", decision.reasons
+    assert isinstance(decision.binding, TenantAuthorizationBinding)
+    assert decision.binding.generation == "bounded-authorization-effect/0.2"
+    assert decision.binding.tenant_id == TENANT
+
+    # Persist/reload must not collapse the v0.2 subtype into historical v0.1.
+    persisted = flow.records.decision(decision.decision_id)
+    assert isinstance(persisted.binding, TenantAuthorizationBinding)
+    assert persisted.binding.tenant_id == TENANT
+
+    attempt, observed = flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert attempt.status == "acknowledged"
+    assert observed is not None and observed.state == "applied"
+    assert len(flow.destination.snapshot()["effects"]) == 1
+
+
+def test_tenant_only_substitution_cannot_reuse_authorization(tmp_path):
+    p = tenant_proposal()
+    flow = tenant_workflow(tmp_path, p)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+
+    substituted = p.model_copy(update={"tenant_id": "tenant-beta"})
+    with pytest.raises(PermissionError, match="authorization-critical inputs changed"):
+        flow.execute(substituted, decision, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("context", "tenant_context_mismatch"),
+        ("grant", "grant_tenant_mismatch"),
+        ("grant_status", "grant_tenant_mismatch"),
+        ("approval", "approval_tenant_mismatch"),
+        ("policy", "policy_tenant_mismatch"),
+    ],
+)
+def test_wrong_or_missing_authority_tenant_holds(tmp_path, mutation, reason):
+    p = tenant_proposal()
+    r = tenant_resolver_for(p)
+    grant = r.contexts[PROFILE]["grant"]
+    wrong = "tenant-beta"
+    if mutation == "context":
+        r.contexts[PROFILE]["tenant_id"] = wrong
+    elif mutation == "grant":
+        grant["tenant_id"] = wrong
+    elif mutation == "grant_status":
+        r.statuses[grant["grant_id"]].tenant_id = wrong
+    elif mutation == "approval":
+        r.approvals[grant["approval_refs"][0]].tenant_id = wrong
+    else:
+        r.policies[POLICY_REF].tenant_id = wrong
+
+    decision = tenant_workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
+    assert decision.result == "hold"
+    assert reason in decision.reasons
+
+
+def test_missing_tenant_is_not_inferred_from_institution_target_or_payload(tmp_path):
+    p = tenant_proposal()
+    r = tenant_resolver_for(p)
+    del r.contexts[PROFILE]["tenant_id"]
+    r.contexts[PROFILE]["institution"]["institution_id"] = (
+        "urn:cognous:institution:tenant-alpha"
+    )
+    decision = tenant_workflow(tmp_path, p, resolver=r).decide(p, now=NOW)
+    assert decision.result == "hold"
+    assert "tenant_context_mismatch" in decision.reasons
+
+
+def test_effect_time_tenant_and_authority_revalidation_blocks_changed_state(tmp_path):
+    p = tenant_proposal()
+    r = tenant_resolver_for(p)
+    flow = tenant_workflow(tmp_path, p, resolver=r)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+
+    grant = r.contexts[PROFILE]["grant"]
+    r.statuses[grant["grant_id"]].tenant_id = "tenant-beta"
+    with pytest.raises(PermissionError, match="authorization-critical inputs changed"):
+        flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+@pytest.mark.parametrize("kind", ["revoked", "expired", "invalid_actor", "conflict"])
+def test_tenant_path_rejects_invalid_current_authority(tmp_path, kind):
+    p = tenant_proposal()
+    r = tenant_resolver_for(p)
+    grant = r.contexts[PROFILE]["grant"]
+    flow = tenant_workflow(tmp_path, p, resolver=r)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+
+    if kind == "revoked":
+        r.statuses[grant["grant_id"]].status = "revoked"
+    elif kind == "expired":
+        r.contexts[PROFILE]["grant"]["expires_at"] = (NOW - timedelta(seconds=1)).isoformat()
+    elif kind == "invalid_actor":
+        r.identities[ACTOR].authenticated = False
+    else:
+        r.conflicts[p.requirement_id].state = "conflict"
+
+    with pytest.raises(PermissionError, match="authorization-critical inputs changed"):
+        flow.execute(p, decision, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
+
+
+@pytest.mark.parametrize("field", ["target", "payload", "action"])
+def test_tenant_path_conflicting_operation_substitution_is_denied(tmp_path, field):
+    p = tenant_proposal()
+    flow = tenant_workflow(tmp_path, p)
+    decision = flow.decide(p, now=NOW)
+    assert decision.result == "authorized"
+
+    changed = p.model_copy(deep=True)
+    if field == "target":
+        changed.target = "urn:cognous:synthetic-account:attacker"
+    elif field == "payload":
+        changed.payload["refund_reason"] = "substituted"
+    else:
+        changed.action_id = "urn:cognous:action:refund-issue-high-v1"
+
+    with pytest.raises(PermissionError, match="authorization-critical inputs changed"):
+        flow.execute(changed, decision, adapter_id=p.adapter_id, now=NOW)
+    assert flow.destination.snapshot()["effects"] == {}
