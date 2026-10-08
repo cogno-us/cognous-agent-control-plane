@@ -60,6 +60,7 @@ def commitment(value: object) -> str:
 
 
 class RuntimeProposal(BaseModel):
+    """Historical bounded-authorization-effect/0.1 proposal."""
     manifest_id: str
     manifest_version: str
     manifest_digest: str
@@ -85,6 +86,12 @@ class RuntimeProposal(BaseModel):
     evidence_refs: list[str] = Field(default_factory=list)
 
 
+class TenantRuntimeProposal(RuntimeProposal):
+    """Tenant-aware bounded-authorization-effect/0.2 proposal."""
+
+    tenant_id: str = Field(min_length=1, max_length=128)
+
+
 class GrantStatus(BaseModel):
     grant_id: str
     revision: str
@@ -95,6 +102,7 @@ class GrantStatus(BaseModel):
     authority_basis_ref: str
     institution_id: str
     authority_domain: str
+    tenant_id: str | None = None
     superseded_by: str | None = None
 
 
@@ -110,6 +118,7 @@ class ApprovalStatus(BaseModel):
     observed_at: str
     institution_id: str
     authority_domain: str
+    tenant_id: str | None = None
 
 
 class EvidenceStatus(BaseModel):
@@ -128,6 +137,7 @@ class PolicyStatus(BaseModel):
     observed_at: str
     institution_id: str
     authority_domain: str
+    tenant_id: str | None = None
 
 
 class ConflictStatus(BaseModel):
@@ -212,13 +222,20 @@ class AuthorizationBinding(BaseModel):
     effective_max_effects: int
 
 
+class TenantAuthorizationBinding(AuthorizationBinding):
+    """Tenant-aware bounded-authorization-effect/0.2 binding."""
+
+    generation: Literal["bounded-authorization-effect/0.2"] = "bounded-authorization-effect/0.2"
+    tenant_id: str = Field(min_length=1, max_length=128)
+
+
 class RuntimeDecision(BaseModel):
     decision_id: str
     effect_id: str
     result: Literal["authorized", "hold", "deny"]
     reasons: list[str]
     decided_at: str
-    binding: AuthorizationBinding | None = None
+    binding: TenantAuthorizationBinding | AuthorizationBinding | None = None
 
 
 class EffectAttempt(BaseModel):
@@ -876,6 +893,10 @@ class BoundedAuthorizationWorkflow:
         institution = context.get("institution", {})
         institution_id = institution.get("institution_id")
         authority_domain = institution.get("authority_domain")
+        tenant_id = getattr(proposal, "tenant_id", None)
+        tenant_aware = isinstance(proposal, TenantRuntimeProposal)
+        if tenant_aware and context.get("tenant_id") != tenant_id:
+            reasons.append("tenant_context_mismatch")
 
         if context.get("schema_version") != AUTHORITY_CONTEXT_VERSION:
             reasons.append("authority_context_version_mismatch")
@@ -970,6 +991,8 @@ class BoundedAuthorizationWorkflow:
                 or not self._same_institution(status, context)
             ):
                 reasons.append("grant_status_binding_mismatch")
+            if tenant_aware and status.tenant_id != tenant_id:
+                reasons.append("grant_tenant_mismatch")
             if status.status != "active":
                 reasons.append("grant_not_active")
             if status.revision != grant["revision"]:
@@ -982,6 +1005,8 @@ class BoundedAuthorizationWorkflow:
             reasons.append("grant_requirement_mismatch")
         if grant["grantee"] != context["principal"] or grant["acting_identity"] != context["acting_identity"]:
             reasons.append("grant_identity_mismatch")
+        if tenant_aware and grant.get("tenant_id") != tenant_id:
+            reasons.append("grant_tenant_mismatch")
         if _parse(grant["not_before"]) > now or _parse(grant["expires_at"]) <= now:
             reasons.append("grant_outside_validity")
 
@@ -1019,6 +1044,8 @@ class BoundedAuthorizationWorkflow:
                 continue
             if current.ref != item["ref"] or not self._same_institution(current, context):
                 reasons.append("policy_binding_mismatch")
+            if tenant_aware and current.tenant_id != tenant_id:
+                reasons.append("policy_tenant_mismatch")
             if current.status != "active" or current.version != item["version"]:
                 reasons.append("policy_stale_or_changed")
             if not self._fresh(current.observed_at, now, self.status_max_age_seconds):
@@ -1033,6 +1060,9 @@ class BoundedAuthorizationWorkflow:
                     continue
                 if approval.approval_ref != ref or not self._same_institution(approval, context):
                     reasons.append("approval_binding_mismatch")
+                    continue
+                if tenant_aware and approval.tenant_id != tenant_id:
+                    reasons.append("approval_tenant_mismatch")
                     continue
                 if approval.role_id == req["role_id"]:
                     matches.append(approval)
@@ -1084,7 +1114,10 @@ class BoundedAuthorizationWorkflow:
             int((action.get("effect_limits") or {}).get("max_effects", proposal.effects)),
         )
 
-        return [], AuthorizationBinding(
+        binding_type = TenantAuthorizationBinding if tenant_aware else AuthorizationBinding
+        binding_extra = {"tenant_id": tenant_id} if tenant_aware else {}
+        return [], binding_type(
+            **binding_extra,
             proposal_commitment=proposal_commitment,
             manifest_id=proposal.manifest_id,
             manifest_version=proposal.manifest_version,

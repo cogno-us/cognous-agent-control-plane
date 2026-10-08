@@ -1,6 +1,7 @@
 from agent_control_plane.local_authority_effect import (
     LOCAL_AUTHORITY_EFFECT_PROFILE,
     LocalExecutionClaim,
+    TenantLocalExecutionClaim,
     materialize_local_execution_claim,
     provision_local_execution_claim,
     verify_local_execution_claim,
@@ -8,6 +9,7 @@ from agent_control_plane.local_authority_effect import (
 from agent_control_plane.bounded import (
     ApprovalStatus,
     AuthorizationBinding,
+    TenantAuthorizationBinding,
     BoundedAuthorizationWorkflow,
     BoundedRecordStore,
     BoundedRunRecord,
@@ -26,6 +28,7 @@ from agent_control_plane.bounded import (
     Resolver,
     RuntimeDecision,
     RuntimeProposal,
+    TenantRuntimeProposal,
     SyntheticResolver,
     commitment,
 )
@@ -72,6 +75,7 @@ from agent_control_plane.validation import validate_replay_bundle, validate_run_
 __all__ = [
     "LOCAL_AUTHORITY_EFFECT_PROFILE",
     "LocalExecutionClaim",
+    "TenantLocalExecutionClaim",
     "materialize_local_execution_claim",
     "provision_local_execution_claim",
     "verify_local_execution_claim",
@@ -80,6 +84,7 @@ __all__ = [
     "commitment",
     "SyntheticResolver",
     "RuntimeProposal",
+    "TenantRuntimeProposal",
     "RuntimeDecision",
     "Resolver",
     "ReconciliationResult",
@@ -96,6 +101,7 @@ __all__ = [
     "BoundedRecordStore",
     "BoundedAuthorizationWorkflow",
     "AuthorizationBinding",
+    "TenantAuthorizationBinding",
     "ApprovalStatus",
     "ActionProposal",
     "AuthorityRecord",

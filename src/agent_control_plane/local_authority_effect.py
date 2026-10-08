@@ -19,6 +19,8 @@ from agent_control_plane.bounded import (
     BoundedAuthorizationWorkflow,
     RuntimeDecision,
     RuntimeProposal,
+    TenantAuthorizationBinding,
+    TenantRuntimeProposal,
     _iso,
     _parse,
     commitment,
@@ -39,11 +41,19 @@ class ApprovalProjection(BaseModel):
     observed_at: str
 
 
+class TenantApprovalProjection(ApprovalProjection):
+    tenant_id: str = Field(min_length=1, max_length=128)
+
+
 class PolicyProjection(BaseModel):
     ref: str
     version: str
     status: Literal["active", "superseded", "unknown"]
     observed_at: str
+
+
+class TenantPolicyProjection(PolicyProjection):
+    tenant_id: str = Field(min_length=1, max_length=128)
 
 
 class EvidenceProjection(BaseModel):
@@ -110,6 +120,15 @@ class LocalExecutionClaim(BaseModel):
     claim_commitment: str
 
 
+class TenantLocalExecutionClaim(LocalExecutionClaim):
+    """Tenant-aware local execution claim for bounded-authorization-effect/0.2."""
+
+    authorization_generation: Literal["bounded-authorization-effect/0.2"] = "bounded-authorization-effect/0.2"
+    tenant_id: str = Field(min_length=1, max_length=128)
+    approval_state: list[TenantApprovalProjection]
+    policy_state: list[TenantPolicyProjection]
+
+
 def _utc(value: str) -> datetime:
     parsed = _parse(value)
     return parsed.astimezone(timezone.utc)
@@ -125,7 +144,7 @@ def _operation_payload(
     binding = decision.binding
     if binding is None:
         raise PermissionError("authorized decision is missing an authorization binding")
-    return {
+    value = {
         "actor": proposal.actor,
         "principal": proposal.principal,
         "institution_id": institution_id,
@@ -147,6 +166,11 @@ def _operation_payload(
         "grant_id": binding.grant_id,
         "grant_revision": binding.grant_revision,
     }
+    if isinstance(binding, TenantAuthorizationBinding):
+        if not isinstance(proposal, TenantRuntimeProposal) or proposal.tenant_id != binding.tenant_id:
+            raise PermissionError("tenant proposal/binding mismatch")
+        value["tenant_id"] = binding.tenant_id
+    return value
 
 
 def _validate_issuance_snapshot(
@@ -168,6 +192,10 @@ def _validate_issuance_snapshot(
     institution = context.get("institution") or {}
     grant = context.get("grant") or {}
     requirement = context.get("requirement") or {}
+    tenant_id = current.tenant_id if isinstance(current, TenantAuthorizationBinding) else None
+    if tenant_id is not None:
+        if context.get("tenant_id") != tenant_id or grant.get("tenant_id") != tenant_id:
+            raise PermissionError("authority snapshot tenant binding mismatch")
 
     if institution.get("institution_id") is None or institution.get("authority_domain") is None:
         raise PermissionError("authority snapshot institution binding unavailable")
@@ -187,6 +215,7 @@ def _validate_issuance_snapshot(
         or grant_status.status != "active"
         or grant_status.institution_id != institution.get("institution_id")
         or grant_status.authority_domain != institution.get("authority_domain")
+        or (tenant_id is not None and grant_status.tenant_id != tenant_id)
     ):
         raise PermissionError("grant projection is not active and binding-consistent")
 
@@ -207,9 +236,13 @@ def _validate_issuance_snapshot(
             or value.policy_versions != current.policy_versions
             or value.institution_id != institution.get("institution_id")
             or value.authority_domain != institution.get("authority_domain")
+            or (tenant_id is not None and value.tenant_id != tenant_id)
         ):
             raise PermissionError("approval projection is not active and binding-consistent")
-        approvals.append(ApprovalProjection(
+        approval_type = TenantApprovalProjection if tenant_id is not None else ApprovalProjection
+        approval_kwargs = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        approvals.append(approval_type(
+            **approval_kwargs,
             approval_ref=value.approval_ref,
             role_id=value.role_id,
             approver=value.approver,
@@ -235,9 +268,13 @@ def _validate_issuance_snapshot(
             or value.status != "active"
             or value.institution_id != institution.get("institution_id")
             or value.authority_domain != institution.get("authority_domain")
+            or (tenant_id is not None and value.tenant_id != tenant_id)
         ):
             raise PermissionError("policy projection is not active and binding-consistent")
-        policies.append(PolicyProjection(
+        policy_type = TenantPolicyProjection if tenant_id is not None else PolicyProjection
+        policy_kwargs = {"tenant_id": tenant_id} if tenant_id is not None else {}
+        policies.append(policy_type(
+            **policy_kwargs,
             ref=value.ref,
             version=value.version,
             status=value.status,
@@ -408,8 +445,13 @@ def _materialize_under_handoff(
             "source": "trusted_control_plane_workflow",
             "authorizing_by_possession": False,
         }
+        claim_type = LocalExecutionClaim
+        if isinstance(current, TenantAuthorizationBinding):
+            raw["authorization_generation"] = "bounded-authorization-effect/0.2"
+            raw["tenant_id"] = current.tenant_id
+            claim_type = TenantLocalExecutionClaim
         raw["claim_commitment"] = commitment(raw)
-        claim = LocalExecutionClaim.model_validate(raw)
+        claim = claim_type.model_validate(raw)
 
         # This call occurs while the authority source handoff lock remains held.
         # Once it returns, the participating sink is authoritative for subsequent
@@ -479,12 +521,20 @@ def provision_local_execution_claim(
     )
 
 
-def verify_local_execution_claim(claim: LocalExecutionClaim | dict[str, Any]) -> bool:
-    value = (
-        claim.model_dump(mode="json", exclude_none=False)
-        if isinstance(claim, LocalExecutionClaim)
-        else copy.deepcopy(claim)
-    )
+def verify_local_execution_claim(
+    claim: LocalExecutionClaim | TenantLocalExecutionClaim | dict[str, Any]
+) -> bool:
+    if isinstance(claim, LocalExecutionClaim):
+        value = claim.model_dump(mode="json", exclude_none=False)
+    else:
+        value = copy.deepcopy(claim)
+        try:
+            if "tenant_id" in value or "authorization_generation" in value:
+                TenantLocalExecutionClaim.model_validate(value)
+            else:
+                LocalExecutionClaim.model_validate(value)
+        except Exception:
+            return False
     supplied = value.pop("claim_commitment", None)
     if value.get("profile") != LOCAL_AUTHORITY_EFFECT_PROFILE:
         return False
