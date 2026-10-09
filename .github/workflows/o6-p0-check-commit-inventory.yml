@@ -1,0 +1,26 @@
+name: O6 P0 check-commit inventory
+
+on:
+  pull_request:
+    paths:
+      - "tests/test_check_commit_inventory.py"
+      - "docs/check-commit-inventory.md"
+      - ".github/workflows/o6-p0-check-commit-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scoped-qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Control Plane
+        run: python -m pip install -e ".[dev]"
+      - name: Run O6-P0B deterministic race qualification
+        run: python -m pytest -q tests/test_check_commit_inventory.py
