@@ -248,6 +248,25 @@ class EffectAttempt(BaseModel):
     error: str | None = None
 
 
+class RefusalInputVersion(BaseModel):
+    """Minimized effect-time input attribution; never contains raw proposal payload."""
+
+    input_type: Literal["grant", "policy", "approval", "evidence", "role_mapping"]
+    input_id: str
+    expected_version: str
+    observed_version: str
+
+
+class EffectTimeRefusal(BaseModel):
+    refusal_id: str
+    decision_id: str
+    effect_id: str
+    recorded_at: str
+    stage: Literal["effect_time_revalidation"] = "effect_time_revalidation"
+    reasons: list[str]
+    changed_inputs: list[RefusalInputVersion] = Field(default_factory=list)
+
+
 class EffectObservation(BaseModel):
     effect_id: str
     observed_at: str | None = None
@@ -278,6 +297,7 @@ class ReconciliationResult(BaseModel):
 class BoundedRunRecord(BaseModel):
     run_id: str
     decisions: list[RuntimeDecision] = Field(default_factory=list)
+    refusals: list[EffectTimeRefusal] = Field(default_factory=list)
     attempts: list[EffectAttempt] = Field(default_factory=list)
     observations: list[EffectObservation] = Field(default_factory=list)
     reconciliations: list[ReconciliationResult] = Field(default_factory=list)
@@ -350,6 +370,9 @@ class BoundedRecordStore:
 
     def append_decision(self, value: RuntimeDecision) -> None:
         self._append("decisions", value)
+
+    def append_refusal(self, value: EffectTimeRefusal) -> None:
+        self._append("refusals", value)
 
     def append_attempt(self, value: EffectAttempt) -> None:
         self._append("attempts", value)
@@ -633,6 +656,17 @@ class BoundedAuthorizationWorkflow:
         frozen = proposal.model_copy(deep=True)
         reasons, current = self._resolve(frozen, now)
         if reasons or current is None or current != persisted.binding:
+            refusal_reasons = sorted(set(reasons))
+            if not refusal_reasons and current != persisted.binding:
+                refusal_reasons = ["authorization_binding_changed"]
+            self.records.append_refusal(EffectTimeRefusal(
+                refusal_id=str(uuid.uuid4()),
+                decision_id=persisted.decision_id,
+                effect_id=persisted.effect_id,
+                recorded_at=_iso(now),
+                reasons=refusal_reasons,
+                changed_inputs=self._effect_time_changed_inputs(frozen, persisted.binding),
+            ))
             raise PermissionError("authorization-critical inputs changed before effect")
         if adapter_id != current.adapter_id:
             raise PermissionError("adapter substitution detected")
@@ -841,6 +875,127 @@ class BoundedAuthorizationWorkflow:
         )
         self.records.append_reconciliation(value)
         return value
+
+    def _effect_time_changed_inputs(
+        self,
+        proposal: RuntimeProposal,
+        binding: AuthorizationBinding,
+    ) -> list[RefusalInputVersion]:
+        """Return only changed decision-critical projections, minimized to IDs/version-state."""
+
+        changed: list[RefusalInputVersion] = []
+        context = self.resolver.authority_context(proposal.authority_context_ref or "") or {}
+        grant = context.get("grant") or {}
+        status = self.resolver.grant_status(binding.grant_id)
+        expected = f"revision={binding.grant_revision};status=active"
+        observed = (
+            "missing"
+            if status is None
+            else f"revision={status.revision};status={status.status};version={status.version}"
+        )
+        if observed != expected and not (
+            status is not None
+            and status.revision == binding.grant_revision
+            and status.status == "active"
+        ):
+            changed.append(RefusalInputVersion(
+                input_type="grant",
+                input_id=binding.grant_id,
+                expected_version=expected,
+                observed_version=observed,
+            ))
+
+        for item in binding.policy_versions:
+            ref = str(item.get("ref", ""))
+            expected_version = f"version={item.get('version')};status=active"
+            current = self.resolver.policy_status(ref)
+            observed_version = (
+                "missing"
+                if current is None
+                else f"version={current.version};status={current.status}"
+            )
+            if current is None or current.version != item.get("version") or current.status != "active":
+                changed.append(RefusalInputVersion(
+                    input_type="policy",
+                    input_id=ref,
+                    expected_version=expected_version,
+                    observed_version=observed_version,
+                ))
+
+        proposal_commitment = binding.proposal_commitment
+        expected_policy_commitment = commitment(binding.policy_versions)
+        for ref in grant.get("approval_refs", []):
+            current = self.resolver.approval_status(ref)
+            expected_version = (
+                f"grant_revision={binding.grant_revision};status=active;"
+                f"proposal={proposal_commitment};policies={expected_policy_commitment}"
+            )
+            observed_version = (
+                "missing"
+                if current is None
+                else (
+                    f"grant_revision={current.grant_revision};status={current.status};"
+                    f"proposal={current.proposal_commitment};"
+                    f"policies={commitment(current.policy_versions)}"
+                )
+            )
+            if (
+                current is None
+                or current.grant_id != binding.grant_id
+                or current.grant_revision != binding.grant_revision
+                or current.status != "active"
+                or current.proposal_commitment != proposal_commitment
+                or commitment(current.policy_versions) != expected_policy_commitment
+            ):
+                changed.append(RefusalInputVersion(
+                    input_type="approval",
+                    input_id=str(ref),
+                    expected_version=expected_version,
+                    observed_version=observed_version,
+                ))
+
+        requirement = context.get("requirement") or {}
+        for obligation in requirement.get("evidence", []):
+            obligation_id = str(obligation.get("obligation_id", ""))
+            current = self.resolver.evidence_status(obligation_id)
+            expected_version = "state=current"
+            observed_version = (
+                "missing"
+                if current is None
+                else f"state={current.state};observed_at={current.observed_at}"
+            )
+            if obligation.get("required") and obligation.get("kind") == "authorization":
+                if current is None or current.state != "current":
+                    changed.append(RefusalInputVersion(
+                        input_type="evidence",
+                        input_id=obligation_id,
+                        expected_version=expected_version,
+                        observed_version=observed_version,
+                    ))
+
+        mapping = self.resolver.role_mapping(
+            str((context.get("institution") or {}).get("institution_id", ""))
+        )
+        mapping_observed = (
+            "missing"
+            if mapping is None
+            else f"version={mapping.version};digest={mapping.digest}"
+        )
+        if (
+            mapping is None
+            or mapping.version != binding.role_mapping_version
+            or mapping.digest != binding.role_mapping_digest
+        ):
+            changed.append(RefusalInputVersion(
+                input_type="role_mapping",
+                input_id=str((context.get("institution") or {}).get("institution_id", "")),
+                expected_version=(
+                    f"version={binding.role_mapping_version};digest={binding.role_mapping_digest}"
+                ),
+                observed_version=mapping_observed,
+            ))
+
+        return changed
 
     def _effect_id(self, binding: AuthorizationBinding) -> str:
         return commitment({
