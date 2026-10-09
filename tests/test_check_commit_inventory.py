@@ -44,7 +44,12 @@ class MutatingDestination:
         self.injected = False
 
     def observe(self, effect_id):
-        return self.base.observe(effect_id)
+        # The imported Worker 21 fixture uses a frozen qualification time. Keep
+        # destination observations on that same trusted timeline so this test
+        # isolates the authority/effect race rather than observation-clock drift.
+        return self.base.observe(effect_id).model_copy(
+            update={"observed_at": NOW.isoformat()}
+        )
 
     def apply(self, **kwargs):
         if not self.injected:
@@ -86,6 +91,8 @@ def test_c0_change_after_revalidation_before_destination_commit_is_residual_race
 
 def test_c0_revocation_after_commit_does_not_rewrite_historical_effect(tmp_path):
     proposal, resolver, flow, decision = setup(tmp_path)
+    base = flow.destination
+    flow.destination = MutatingDestination(base, lambda: None)
     attempt, observation = flow.execute(
         proposal, decision, adapter_id=proposal.adapter_id, now=NOW
     )
@@ -94,7 +101,7 @@ def test_c0_revocation_after_commit_does_not_rewrite_historical_effect(tmp_path)
 
     _invalidate(resolver, "grant")
 
-    state = flow.destination.snapshot()
+    state = base.snapshot()
     assert decision.effect_id in state["effects"]
     assert resolver.statuses[GRANT].status == "revoked"
 
