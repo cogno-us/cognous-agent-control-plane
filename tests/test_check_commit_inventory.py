@@ -303,3 +303,134 @@ def test_c1_concurrent_effect_ordered_before_revocation_preserves_committed_effe
     assert events.index("effect_commit") < events.index("mutation:grant:revoked")
     assert snap["effects"] == [(claim.effect_id, claim.claim_id)]
     assert snap["authority"]["grant"] == "revoked"
+
+
+def _setup_with_grant(tmp_path, grant_id):
+    proposal, resolver, flow, _ = setup(tmp_path)
+    context = resolver.contexts[proposal.authority_context_ref]
+    old_grant = context["grant"]["grant_id"]
+    context["grant"]["grant_id"] = grant_id
+    status = resolver.statuses.pop(old_grant)
+    resolver.statuses[grant_id] = status.model_copy(update={"grant_id": grant_id})
+    for approval_ref in context["grant"].get("approval_refs", []):
+        resolver.approvals[approval_ref] = resolver.approvals[approval_ref].model_copy(
+            update={"grant_id": grant_id}
+        )
+    decision = flow.decide(proposal, now=NOW)
+    assert decision.result == "authorized", decision.reasons
+    return proposal, resolver, flow, decision
+
+
+def _assert_refusal_evidence(flow, decision, *, reason, input_type, input_id, observed_fragment):
+    rows = [
+        row for row in flow.records.load().refusals
+        if row.decision_id == decision.decision_id and row.effect_id == decision.effect_id
+    ]
+    assert len(rows) == 1
+    refusal = rows[0]
+    assert reason in refusal.reasons
+    matches = [
+        item for item in refusal.changed_inputs
+        if item.input_type == input_type and item.input_id == input_id
+    ]
+    assert len(matches) == 1
+    assert observed_fragment in matches[0].observed_version
+
+
+def test_effect_time_refusal_preserves_specific_reason_and_changed_grant_version(tmp_path):
+    proposal, resolver, flow, decision = _setup_with_grant(tmp_path, "urn:cognous:grant:o6-a")
+    resolver.statuses["urn:cognous:grant:o6-a"] = resolver.statuses[
+        "urn:cognous:grant:o6-a"
+    ].model_copy(update={"status": "revoked", "version": "7"})
+
+    with pytest.raises(PermissionError, match="authorization-critical inputs changed"):
+        flow.execute(proposal, decision, adapter_id=proposal.adapter_id, now=NOW)
+
+    _assert_refusal_evidence(
+        flow,
+        decision,
+        reason="grant_not_active",
+        input_type="grant",
+        input_id="urn:cognous:grant:o6-a",
+        observed_fragment="status=revoked;version=7",
+    )
+    raw = flow.records.path.read_text(encoding="utf-8")
+    assert '"reason": "duplicate"' not in raw
+
+
+def test_mutation_control_disabled_refusal_writer_breaks_evidence_assertion(tmp_path, monkeypatch):
+    proposal, resolver, flow, decision = _setup_with_grant(tmp_path, "urn:cognous:grant:o6-mutation")
+    resolver.statuses["urn:cognous:grant:o6-mutation"] = resolver.statuses[
+        "urn:cognous:grant:o6-mutation"
+    ].model_copy(update={"status": "revoked", "version": "9"})
+    monkeypatch.setattr(flow.records, "append_refusal", lambda value: None)
+
+    with pytest.raises(PermissionError):
+        flow.execute(proposal, decision, adapter_id=proposal.adapter_id, now=NOW)
+
+    with pytest.raises(AssertionError):
+        _assert_refusal_evidence(
+            flow,
+            decision,
+            reason="grant_not_active",
+            input_type="grant",
+            input_id="urn:cognous:grant:o6-mutation",
+            observed_fragment="status=revoked;version=9",
+        )
+
+
+def test_simultaneous_distinct_grant_revocations_are_attributed_to_correct_items(tmp_path):
+    fixtures = [
+        _setup_with_grant(tmp_path / "a", "urn:cognous:grant:o6-a"),
+        _setup_with_grant(tmp_path / "b", "urn:cognous:grant:o6-b"),
+    ]
+    barrier = threading.Barrier(2)
+    failures = []
+
+    def revoke_and_execute(fixture, grant_id, version):
+        proposal, resolver, flow, decision = fixture
+        resolver.statuses[grant_id] = resolver.statuses[grant_id].model_copy(
+            update={"status": "revoked", "version": version}
+        )
+        barrier.wait(timeout=5)
+        try:
+            flow.execute(proposal, decision, adapter_id=proposal.adapter_id, now=NOW)
+        except PermissionError:
+            return
+        failures.append(grant_id)
+
+    threads = [
+        threading.Thread(target=revoke_and_execute, args=(fixtures[0], "urn:cognous:grant:o6-a", "11")),
+        threading.Thread(target=revoke_and_execute, args=(fixtures[1], "urn:cognous:grant:o6-b", "12")),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+    assert failures == []
+
+    _assert_refusal_evidence(
+        fixtures[0][2],
+        fixtures[0][3],
+        reason="grant_not_active",
+        input_type="grant",
+        input_id="urn:cognous:grant:o6-a",
+        observed_fragment="version=11",
+    )
+    _assert_refusal_evidence(
+        fixtures[1][2],
+        fixtures[1][3],
+        reason="grant_not_active",
+        input_type="grant",
+        input_id="urn:cognous:grant:o6-b",
+        observed_fragment="version=12",
+    )
+    assert all(
+        item.input_id != "urn:cognous:grant:o6-b"
+        for item in fixtures[0][2].records.load().refusals[-1].changed_inputs
+    )
+    assert all(
+        item.input_id != "urn:cognous:grant:o6-a"
+        for item in fixtures[1][2].records.load().refusals[-1].changed_inputs
+    )
