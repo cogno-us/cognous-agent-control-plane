@@ -23,6 +23,14 @@ A Python reference implementation for bounded agent authorization, effect-time r
 
 **Implementation status:** this README describes merged public reference work. Component acceptance, selection in the hub and execution of a qualification are separate facts. The selected revision for this component is `248d899634d9db3518e831bc7ab568a48733f825`; the [hub lock](https://github.com/cogno-us/cognous-open-control-stack/blob/5737267d94d2b445735c95e8480a31de73a2abe8/component-lock.json) is the source of that integration choice.
 
+## Current selection versus historical qualification
+
+**As of 2026-10-10, the hub selects Control Plane revision `d3dadee70bd319812b207389ab1e0f6efe511916`.** This is distinct from this repository's accepted source main `577aedb505e4f8135ea9973f0ab9a9dbc5cbb22d`. Check the [current component lock](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json) and [release status](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/release-status.md) rather than extrapolating from an archived README citation. The earlier `248d8996...` selected revision and `5737267d...` hub link below describe the **historical qualification checkpoint** and are preserved for traceability.
+
+**Example:** A valid synthetic refund decision can be followed by approval withdrawal before effect dispatch. Effect-time revalidation must then refuse the changed request; an earlier permit is not a reusable capability. If the destination might have committed an earlier attempt but the acknowledgment was lost, keep the original effect/attempt identity as `unknown` and reconcile it. Missing observation is not safe retry authorization. Neither case establishes authenticated institutional adoption or external payment settlement.
+
+For audience navigation and evidence interpretation, use the hub [start guide](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/start-here.md). Operational trust remains [HOLD under #30](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30).
+
 ## Purpose and intended users
 
 Organizations need to distinguish what an agent proposed from what policy allowed and what a destination actually did. A cached approval or fluent explanation cannot answer whether authority, evidence and approvals were still valid when an effect was attempted.
