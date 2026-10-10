@@ -23,6 +23,12 @@ A Python reference implementation for bounded agent authorization, effect-time r
 
 **Implementation status:** this README describes merged public reference work. Component acceptance, selection in the hub and execution of a qualification are separate facts. The selected revision for this component is `248d899634d9db3518e831bc7ab568a48733f825`; the [hub lock](https://github.com/cogno-us/cognous-open-control-stack/blob/5737267d94d2b445735c95e8480a31de73a2abe8/component-lock.json) is the source of that integration choice.
 
+## Current selection and historical evidence (2026-10-10)
+
+**Current hub-selected revision:** `d3dadee70bd319812b207389ab1e0f6efe511916` in the live [component lock](https://github.com/cogno-us/cognous-open-control-stack/blob/main/component-lock.json). **Current accepted source repository revision:** `577aedb505e4f8135ea9973f0ab9a9dbc5cbb22d`. These are different revision scopes, not evidence that newer code has been enabled by the release. Check the hub [release status](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/release-status.md) and [start guide](https://github.com/cogno-us/cognous-open-control-stack/blob/main/docs/start-here.md) for the supported reference, not the earlier `5737267d...` component lock linked in the historical overview below.
+
+This repository's merged source work and its synthetic qualifications do not authenticate deployment-level Authority Context or external effects. The [operator-trust gate](https://github.com/cogno-us/cognous-stack-orchestrator/issues/30) remains HOLD; no production grant, settlement, C2/C3 or release-promotion claim follows from a README or passing optional test.
+
 ## Purpose and intended users
 
 Organizations need to distinguish what an agent proposed from what policy allowed and what a destination actually did. A cached approval or fluent explanation cannot answer whether authority, evidence and approvals were still valid when an effect was attempted.
